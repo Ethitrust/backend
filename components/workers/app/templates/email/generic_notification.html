@@ -1,0 +1,6 @@
+{% extends "base.html" %} {% block content %}
+<h2 style="margin-top: 0">{{ subject }}</h2>
+<p style="line-height: 1.6; margin-bottom: 0">
+  {{ message or "You have a new notification from Ethitrust." }}
+</p>
+{% endblock %}

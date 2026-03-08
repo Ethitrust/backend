@@ -1,0 +1,28 @@
+{% extends "base.html" %} {% block content %}
+<h2 style="margin-top: 0">You’ve been invited to an escrow</h2>
+<p style="line-height: 1.6">You have received a new escrow invitation.</p>
+<p style="line-height: 1.6">
+  Use your invitation link to review terms and accept, reject, or counter the
+  invitation.
+</p>
+{% if invitation_url %}
+<p style="margin: 24px 0">
+  <a
+    href="{{ invitation_url }}"
+    style="
+      display: inline-block;
+      padding: 12px 20px;
+      border-radius: 10px;
+      background: #111827;
+      color: #ffffff;
+      text-decoration: none;
+      font-weight: 600;
+    "
+    >Review Invitation</a
+  >
+</p>
+<p style="line-height: 1.6; font-size: 12px; color: #6b7280">
+  If the button doesn’t work, copy and paste this URL into your browser:<br />
+  <a href="{{ invitation_url }}" style="color: #2563eb">{{ invitation_url }}</a>
+</p>
+{% endif %} {% endblock %}

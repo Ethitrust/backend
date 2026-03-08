@@ -1,0 +1,324 @@
+x-common-env: &common-env
+  SECRET_KEY: "changeme-in-production-use-a-long-random-string-at-least-32-chars"
+  RABBITMQ_URL: "amqp://ethitrust:ethitrust@rabbitmq:5672/"
+  REDIS_URL: "redis://redis:6379/0"
+  SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_PASS: ${SMTP_PASS:-}
+  FROM_EMAIL: ${FROM_EMAIL:-noreply@ethitrust.com}
+  FRONTEND_URL: ${FRONTEND_URL:-https://ethitrust.me}
+
+services:
+  # ─── Infrastructure ───────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_MULTIPLE_DATABASES: "ethitrust_core,ethitrust_auth,ethitrust_user,ethitrust_wallet,ethitrust_escrow,ethitrust_invoice,ethitrust_payment_link,ethitrust_payout,ethitrust_kyc,ethitrust_dispute,ethitrust_notification,ethitrust_audit,ethitrust_fee,ethitrust_organization,ethitrust_admin"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/create_databases.sh:/docker-entrypoint-initdb.d/create_databases.sh
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ethitrust
+      RABBITMQ_DEFAULT_PASS: ethitrust
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Application Services ─────────────────────────────────
+  gateway:
+    build: ./gateway
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      AUTH_SERVICE_URL: "http://auth-service:8000"
+      USER_SERVICE_URL: "http://user-service:8000"
+      WALLET_SERVICE_URL: "http://wallet-service:8000"
+      ESCROW_SERVICE_URL: "http://escrow-service:8000"
+      # INVOICE_SERVICE_URL: "http://invoice-service:8000"
+      # PAYMENT_LINK_SERVICE_URL: "http://payment-link-service:8000"
+      PAYOUT_SERVICE_URL: "http://payout-service:8000"
+      KYC_SERVICE_URL: "http://kyc-service:8000"
+      STORAGE_SERVICE_URL: "http://storage-service:8000"
+      DISPUTE_SERVICE_URL: "http://dispute-service:8000"
+      NOTIFICATION_SERVICE_URL: "http://notification-service:8000"
+      AUDIT_SERVICE_URL: "http://audit-service:8000"
+      FEE_SERVICE_URL: "http://fee-service:8000"
+      ADMIN_SERVICE_URL: "http://admin-service:8000"
+      # BANK_SERVICE_URL: "http://payment-provider-service:8000"
+      ORGANIZATION_SERVICE_URL: "http://organization-service:8000"
+      PAYMENT_PROVIDER_URL: "http://payment-provider-service:8000"
+      WEBHOOK_SERVICE_URL: "http://webhook-service:8000"
+      KYC_ENFORCEMENT_ENABLED: "true"
+      KYC_MIN_LEVEL: "1"
+    ports:
+      - "8000:8000"
+    depends_on:
+      - auth-service
+      - user-service
+
+  auth-service:
+    build: ./components/auth
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres/ethitrust_auth"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  user-service:
+    build: ./components/user
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres/ethitrust_user"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  wallet-service:
+    build: ./components/wallet
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres/ethitrust_wallet"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  escrow-service:
+    build: ./components/escrow
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres/ethitrust_escrow"
+      PLATFORM_FEE_PERCENT: "1.5"
+      MIN_FEE_AMOUNT: "100"
+      MAX_FEE_AMOUNT: "500000"
+      ESCROW_DEFAULT_INSPECTION_PERIOD_HOURS: "24"
+      ESCROW_DEFAULT_DISPUTE_WINDOW_HOURS: "72"
+      ESCROW_DEFAULT_MILESTONE_INSPECTION_HOURS: "24"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  # invoice-service:
+  #   build: ./components/invoice
+  #   restart: unless-stopped
+  #   environment:
+  #     <<: *common-env
+  #     DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres/ethitrust_invoice"
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     rabbitmq:
+  #       condition: service_healthy
+
+  # payment-link-service:
+  #   build: ./components/payment_link
+  #   restart: unless-stopped
+  #   environment:
+  #     <<: *common-env
+  #     DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres/ethitrust_payment_link"
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     rabbitmq:
+  #       condition: service_healthy
+
+  payout-service:
+    build: ./components/payout
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres/ethitrust_payout"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  kyc-service:
+    build: ./components/kyc
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres/ethitrust_kyc"
+      KYC_API_URL: "https://api.verifayda.com"
+      KYC_API_KEY: ""
+      FAYDA_BASE_URL: ${FAYDA_BASE_URL}
+      FAYDA_API_KEY: ${FAYDA_API_KEY}
+      STORAGE_GRPC: "storage-service:50051"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  storage-service:
+    build: ./components/storage
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME:-ethitrust-private}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-https://<ACCOUNT_ID>.r2.cloudflarestorage.com}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_REGION: ${AWS_REGION:-auto}
+      PRESIGNED_URL_TTL: ${PRESIGNED_URL_TTL:-900}
+      PRESIGNED_URL_MAX_TTL: ${PRESIGNED_URL_MAX_TTL:-900}
+      ALLOWED_UPLOAD_CONTENT_TYPES: ${ALLOWED_UPLOAD_CONTENT_TYPES:-image/png,image/jpeg,image/jpg,application/pdf}
+
+  dispute-service:
+    build: ./components/dispute
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres/ethitrust_dispute"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  notification-service:
+    build: ./components/notification
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres/ethitrust_notification"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  audit-service:
+    build: ./components/audit
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres/ethitrust_audit"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  fee-service:
+    build: ./components/fee
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres/ethitrust_fee"
+      PLATFORM_FEE_PERCENT: "1.5"
+      MIN_FEE_AMOUNT: "100"
+      MAX_FEE_AMOUNT: "500000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  admin-service:
+    build: ./components/admin
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres/ethitrust_admin"
+      AUDIT_SERVICE_URL: "http://audit-service:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # bank-service:
+  #   build: ./components/bank
+  #   restart: unless-stopped
+  #   environment:
+  #     <<: *common-env
+  # NOTE: The bank component currently contains proto files only (no Dockerfile/app).
+  # Bank list endpoints are served by payment-provider-service at /banks.
+
+  organization-service:
+    build: ./components/organization
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres/ethitrust_organization"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  payment-provider-service:
+    build: ./components/payment_provider
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+
+  webhook-service:
+    build: ./components/webhook
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres/ethitrust_core"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  workers-service:
+    build: ./components/workers
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  rabbitmq_data:

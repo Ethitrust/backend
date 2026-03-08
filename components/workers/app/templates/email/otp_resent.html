@@ -1,0 +1,15 @@
+{% extends "base.html" %} {% block content %}
+<h2 style="margin-top: 0">Your OTP code</h2>
+<p style="line-height: 1.6">
+  A new verification code has been requested for your account.
+</p>
+<p style="line-height: 1.6">
+  <strong
+    >{{ otp or "Your one-time code is available in app notifications."
+    }}</strong
+  >
+</p>
+<p style="line-height: 1.6">
+  If you did not request this, please secure your account immediately.
+</p>
+{% endblock %}

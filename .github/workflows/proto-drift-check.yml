@@ -1,0 +1,31 @@
+name: Proto Drift Check
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  proto-drift:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install grpc tools
+        run: python -m pip install --upgrade pip grpcio-tools
+
+      - name: Regenerate protobuf stubs
+        run: python scripts/generate_protos.py
+
+      - name: Fail if generated files changed
+        run: |
+          git diff --exit-code -- '*.proto' '*_pb2.py' '*_pb2_grpc.py'
