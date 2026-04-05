@@ -1,0 +1,55 @@
+syntax = "proto3";
+package dispute;
+
+service DisputeService {
+  rpc ListDisputes (ListDisputesRequest) returns (ListDisputesResponse);
+  rpc MarkDisputeUnderReview (MarkDisputeUnderReviewRequest) returns (DisputeResponse);
+  rpc RequestDisputeResolution (RequestDisputeResolutionRequest) returns (DisputeResponse);
+  rpc ExecuteDisputeResolution (ExecuteDisputeResolutionRequest) returns (DisputeResponse);
+}
+
+message ListDisputesRequest {
+  string status = 1;
+  int32 page = 2;
+  int32 limit = 3;
+}
+
+message ListDisputesResponse {
+  repeated DisputeResponse items = 1;
+  int32 total = 2;
+  int32 page = 3;
+  int32 limit = 4;
+  int32 pages = 5;
+}
+
+message MarkDisputeUnderReviewRequest {
+  string dispute_id = 1;
+  string reviewer_id = 2;
+  string note = 3;
+}
+
+message RequestDisputeResolutionRequest {
+  string dispute_id = 1;
+  string admin_id = 2;
+  string resolution = 3;
+  string resolution_note = 4;
+}
+
+message ExecuteDisputeResolutionRequest {
+  string dispute_id = 1;
+  string resolution = 2;
+  string admin_id = 3;
+}
+
+message DisputeResponse {
+  string id = 1;
+  string escrow_id = 2;
+  string raised_by = 3;
+  string reason = 4;
+  string description = 5;
+  string status = 6;
+  string resolution_note = 7;
+  string resolved_by = 8;
+  string resolved_at = 9;
+  string created_at = 10;
+}

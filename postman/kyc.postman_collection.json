@@ -1,0 +1,211 @@
+{
+    "info": {
+        "name": "Ethitrust KYC Service",
+        "description": "Postman collection for the KYC component only (components/kyc). Uses gateway by default: {{baseUrl}}.",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+        "_postman_id": "f57a27f3-1f83-42f4-b507-cc3c81bc34f2"
+    },
+    "item": [
+        {
+            "name": "KYC Verification",
+            "item": [
+                {
+                    "name": "Drivers License Lookup",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{authToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"license_number\": \"{{licenseNumber}}\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/kyc/drivers-license",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "kyc",
+                                "drivers-license"
+                            ]
+                        },
+                        "description": "Driver's license verification endpoint. Note: current implementation may return not implemented until service support is added."
+                    }
+                },
+                {
+                    "name": "TIN Lookup",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{authToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"tin\": \"{{tin}}\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/kyc/tin",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "kyc",
+                                "tin"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Fayda Send OTP",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "if (pm.response.code >= 200 && pm.response.code < 300) {",
+                                    "  const json = pm.response.json();",
+                                    "  const tx = json?.data?.transaction_id || json?.data?.transactionId || json?.transaction_id;",
+                                    "  if (tx) pm.collectionVariables.set('transactionId', tx);",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{authToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"fan_or_fin\": \"{{fanOrFin}}\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/kyc/fayda/send-otp",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "kyc",
+                                "fayda",
+                                "send-otp"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Fayda Verify OTP",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{authToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"transaction_id\": \"{{transactionId}}\",\n  \"otp\": \"{{otp}}\",\n  \"fan_or_fin\": \"{{fanOrFin}}\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/kyc/fayda/verify-otp",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "kyc",
+                                "fayda",
+                                "verify-otp"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "KYC Profile",
+            "item": [
+                {
+                    "name": "Get My KYC Photo URL",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{authToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/kyc/me/photo-url",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "kyc",
+                                "me",
+                                "photo-url"
+                            ]
+                        }
+                    }
+                }
+            ]
+        }
+    ],
+    "variable": [
+        {
+            "key": "baseUrl",
+            "value": "http://localhost:8000"
+        },
+        {
+            "key": "authToken",
+            "value": ""
+        },
+        {
+            "key": "licenseNumber",
+            "value": "D1234567"
+        },
+        {
+            "key": "tin",
+            "value": "1234567890"
+        },
+        {
+            "key": "fanOrFin",
+            "value": "FAN123456789"
+        },
+        {
+            "key": "transactionId",
+            "value": ""
+        },
+        {
+            "key": "otp",
+            "value": "123456"
+        }
+    ]
+}

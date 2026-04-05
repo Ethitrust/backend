@@ -1,0 +1,35 @@
+syntax = "proto3";
+package escrow;
+
+service EscrowService {
+  rpc GetEscrow (EscrowRequest) returns (EscrowResponse);
+  rpc TransitionStatus (TransitionRequest) returns (EscrowResponse);
+  rpc AssociateUserWithEscrow (EscrowAssociationRequest) returns (EscrowAssociationResponse);
+}
+
+message EscrowRequest   { string escrow_id = 1; }
+message TransitionRequest {
+  string escrow_id  = 1;
+  string new_status = 2;
+  string actor_id   = 3;
+}
+message EscrowAssociationRequest {
+  string escrow_id = 1;
+  string user_id = 2;
+}
+
+message EscrowAssociationResponse {
+  bool success = 1;
+  string message = 2;
+}
+message EscrowResponse {
+  string escrow_id    = 1;
+  string status       = 2;
+  string escrow_type  = 3;
+  string initiator_id = 4;
+  string receiver_id  = 5;
+  int64  amount       = 6;
+  string currency     = 7;
+  bool   success      = 8;
+  string message      = 9;
+}

@@ -1,0 +1,24 @@
+syntax = "proto3";
+package audit;
+
+import "google/protobuf/struct.proto";
+
+service AuditService {
+  rpc EmitAuditLog (EmitAuditLogRequest) returns (EmitAuditLogResponse);
+}
+
+message EmitAuditLogRequest {
+  string actor_id = 1;
+  string action = 2;
+  string resource = 3;
+  string resource_id = 4;
+  google.protobuf.Struct before = 5;
+  google.protobuf.Struct after = 6;
+  google.protobuf.Struct metadata = 7;
+}
+
+message EmitAuditLogResponse {
+  bool success = 1;
+  string message = 2;
+  string log_id = 3;
+}

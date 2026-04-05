@@ -1,0 +1,112 @@
+{
+    "info": {
+        "name": "Ethitrust User Service",
+        "description": "Postman collection for User routes defined in components/user/app/api.py.",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+        "_postman_id": "a3fa2f41-f3de-4b8a-98fb-cb94553295e8"
+    },
+    "item": [
+        {
+            "name": "Users",
+            "item": [
+                {
+                    "name": "Get Me",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "if (pm.response.code === 200) {",
+                                    "  const data = pm.response.json();",
+                                    "  if (data?.id) pm.collectionVariables.set('userId', data.id);",
+                                    "  if (data?.email) pm.collectionVariables.set('email', data.email);",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{authToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/users/me",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "users",
+                                "me"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Update Me",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{authToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"first_name\": \"{{firstName}}\",\n  \"last_name\": \"{{lastName}}\",\n  \"phone\": \"{{phone}}\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/users/me",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "users",
+                                "me"
+                            ]
+                        }
+                    }
+                }
+            ]
+        }
+    ],
+    "variable": [
+        {
+            "key": "baseUrl",
+            "value": "http://localhost:8000"
+        },
+        {
+            "key": "authToken",
+            "value": ""
+        },
+        {
+            "key": "firstName",
+            "value": "Test"
+        },
+        {
+            "key": "lastName",
+            "value": "User"
+        },
+        {
+            "key": "phone",
+            "value": "+251911000000"
+        },
+        {
+            "key": "userId",
+            "value": ""
+        },
+        {
+            "key": "email",
+            "value": ""
+        }
+    ]
+}

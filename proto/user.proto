@@ -1,0 +1,49 @@
+syntax = "proto3";
+package user;
+
+service UserService {
+  rpc SyncUser       (SyncUserRequest)     returns (StatusResponse);  
+  rpc UpdateVerification       (UpdateVerificationRequest)     returns (StatusResponse);
+  rpc GetUser        (UserRequest)         returns (UserResponse);
+  rpc GetUserByEmail (UserByEmailRequest) returns (UserResponse);
+  rpc SetKycLevel    (SetKycLevelRequest)  returns (StatusResponse);
+  rpc UpdateRole     (UpdateRoleRequest)   returns (StatusResponse);
+  rpc BanUser        (BanUserRequest)      returns (StatusResponse);
+  rpc ListUsers      (ListUsersRequest)    returns (ListUsersResponse);
+}
+
+message SyncUserRequest {
+  string user_id       = 1;
+  string email         = 2;
+  string password_hash = 3;
+  string first_name    = 4;
+  string last_name     = 5;
+  string role          = 6;
+  bool   is_verified   = 7;
+  bool   is_banned     = 8;
+  int32  kyc_level     = 9;
+  string otp           = 10;
+}
+
+message UserRequest   { string user_id = 1; }
+message UserByEmailRequest {
+  string email = 1;
+}
+message UserResponse {
+  string user_id     = 1;
+  string email       = 2;
+  string role        = 3;
+  bool   is_verified = 4;
+  bool   is_banned   = 5;
+  int32  kyc_level   = 6;
+  string full_name   = 7;
+}
+
+message SetKycLevelRequest { string user_id = 1; int32 level = 2; }
+message UpdateRoleRequest  { string user_id = 1; string role = 2; }
+message UpdateVerificationRequest { string user_id = 1; bool is_verified = 2; }
+message BanUserRequest     { string user_id = 1; bool ban = 2; string reason = 3; }
+message StatusResponse     { bool success = 1; string message = 2; }
+
+message ListUsersRequest  { int32 offset = 1; int32 limit = 2; }
+message ListUsersResponse { repeated UserResponse users = 1; int32 total = 2; }

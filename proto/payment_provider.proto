@@ -1,0 +1,52 @@
+syntax = "proto3";
+package payment_provider;
+
+service PaymentProviderService {
+  rpc CreateCheckout (CheckoutRequest)  returns (CheckoutResponse);
+  rpc VerifyPayment  (VerifyRequest)    returns (VerifyResponse);
+  rpc InitiateTransfer (TransferRequest) returns (TransferResponse);
+  rpc VerifyTransfer (TransferVerifyRequest) returns (TransferVerifyResponse);
+}
+
+message CheckoutRequest {
+  int64  amount        = 1;
+  string currency      = 2;
+  string metadata_json = 3;   // JSON-encoded dict
+  string provider      = 4;   // chapa 
+}
+
+message CheckoutResponse {
+  string payment_url      = 1;
+  string transaction_ref  = 2;
+  string provider         = 3;
+}
+
+message VerifyRequest  { string reference = 1; string provider = 2; }
+message VerifyResponse { bool success = 1; string status = 2; }
+
+message TransferRequest {
+  string account_name = 1;
+  string account_number = 2;
+  int64 amount = 3;
+  string currency = 4;
+  string reference = 5;
+  int64 bank_code = 6;
+  string provider = 7;
+}
+
+message TransferResponse {
+  bool success = 1;
+  string provider_ref = 2;
+  string message = 3;
+  string status = 4;
+}
+
+message TransferVerifyRequest {
+  string provider_ref = 1;
+  string provider = 2;
+}
+
+message TransferVerifyResponse {
+  bool success = 1;
+  string status = 2;
+}

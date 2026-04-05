@@ -1,0 +1,347 @@
+{
+    "info": {
+        "name": "Ethitrust Dispute Service",
+        "description": "Postman collection for dispute routes defined in components/dispute/app/api.py.",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+        "_postman_id": "8c250980-f72d-46ab-9f32-67f798af6f5e"
+    },
+    "item": [
+        {
+            "name": "Escrow Dispute",
+            "item": [
+                {
+                    "name": "Raise Dispute",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "if (pm.response.code === 201) {",
+                                    "  const data = pm.response.json();",
+                                    "  if (data?.id) pm.collectionVariables.set('disputeId', data.id);",
+                                    "  if (data?.escrow_id) pm.collectionVariables.set('escrowId', data.escrow_id);",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{authToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"reason\": \"not_delivered\",\n  \"description\": \"Buyer did not receive the item after agreed delivery date.\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/escrow/{{escrowId}}/dispute",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "escrow",
+                                "{{escrowId}}",
+                                "dispute"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Dispute By Escrow",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "if (pm.response.code === 200) {",
+                                    "  const data = pm.response.json();",
+                                    "  if (data?.id) pm.collectionVariables.set('disputeId', data.id);",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{authToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/escrow/{{escrowId}}/dispute",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "escrow",
+                                "{{escrowId}}",
+                                "dispute"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Add Evidence",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{authToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"file_url\": \"{{evidenceFileUrl}}\",\n  \"file_type\": \"image/png\",\n  \"description\": \"Proof of transaction and chat logs\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/escrow/{{escrowId}}/dispute/{{disputeId}}/evidence",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "escrow",
+                                "{{escrowId}}",
+                                "dispute",
+                                "{{disputeId}}",
+                                "evidence"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Resolve Dispute",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{authToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"resolution\": \"buyer\",\n  \"resolution_note\": \"Evidence supports buyer claim. Funds should be returned.\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/escrow/{{escrowId}}/dispute/{{disputeId}}/resolve",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "escrow",
+                                "{{escrowId}}",
+                                "dispute",
+                                "{{disputeId}}",
+                                "resolve"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Dispute Management",
+            "item": [
+                {
+                    "name": "List Disputes",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "if (pm.response.code === 200) {",
+                                    "  const data = pm.response.json();",
+                                    "  if (Array.isArray(data?.items) && data.items.length > 0 && data.items[0].id) {",
+                                    "    pm.collectionVariables.set('disputeId', data.items[0].id);",
+                                    "  }",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{authToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/disputes?page={{page}}&limit={{limit}}&status={{status}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "disputes"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "{{page}}"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "{{limit}}"
+                                },
+                                {
+                                    "key": "status",
+                                    "value": "{{status}}"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Move Dispute To Review",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{authToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"note\": \"Escalated for manual review by dispute operations team.\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/disputes/{{disputeId}}/review",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "disputes",
+                                "{{disputeId}}",
+                                "review"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Cancel Dispute",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{authToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/disputes/{{disputeId}}/cancel",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "disputes",
+                                "{{disputeId}}",
+                                "cancel"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Execute Resolution (Internal)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "X-Internal-Token",
+                                "value": "{{internalToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"resolution\": \"buyer\",\n  \"admin_id\": \"{{adminId}}\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/disputes/{{disputeId}}/execute-resolution",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "disputes",
+                                "{{disputeId}}",
+                                "execute-resolution"
+                            ]
+                        }
+                    }
+                }
+            ]
+        }
+    ],
+    "variable": [
+        {
+            "key": "baseUrl",
+            "value": "http://localhost:8000"
+        },
+        {
+            "key": "authToken",
+            "value": ""
+        },
+        {
+            "key": "internalToken",
+            "value": ""
+        },
+        {
+            "key": "escrowId",
+            "value": "11111111-1111-1111-1111-111111111111"
+        },
+        {
+            "key": "disputeId",
+            "value": "22222222-2222-2222-2222-222222222222"
+        },
+        {
+            "key": "adminId",
+            "value": "33333333-3333-3333-3333-333333333333"
+        },
+        {
+            "key": "page",
+            "value": "1"
+        },
+        {
+            "key": "limit",
+            "value": "20"
+        },
+        {
+            "key": "status",
+            "value": "open"
+        },
+        {
+            "key": "evidenceFileUrl",
+            "value": "https://example.com/evidence.png"
+        }
+    ]
+}

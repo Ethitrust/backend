@@ -1,0 +1,33 @@
+syntax = "proto3";
+package auth;
+
+service AuthValidator {
+  rpc ValidateToken (TokenRequest) returns (TokenResponse);
+  rpc GetUserById   (UserRequest)  returns (UserResponse);
+  rpc CheckEmailExists (EmailRequest) returns (EmailExistsResponse);
+}
+
+message TokenRequest  { string token = 1; }
+message TokenResponse {
+  bool valid = 1;
+  string user_id = 2;
+  string role = 3;
+  repeated string scopes = 4;
+}
+
+message UserRequest   { string user_id = 1; }
+message UserResponse  {
+  string user_id    = 1;
+  string email      = 2;
+  string role       = 3;
+  bool   is_verified = 4;
+  bool   is_banned   = 5;
+  int32  kyc_level   = 6;
+}
+
+message EmailRequest { string email = 1; }
+
+message EmailExistsResponse {
+  bool exists = 1;
+  string user_id = 2;
+}

@@ -1,0 +1,33 @@
+syntax = "proto3";
+package storage;
+
+service StorageService {
+  rpc GeneratePresignedUploadUrl   (PresignUploadRequest)   returns (PresignUrlResponse);
+  rpc GeneratePresignedDownloadUrl (PresignDownloadRequest) returns (PresignUrlResponse);
+}
+
+message PresignUploadRequest {
+  string actor_user_id       = 1;
+  string role                = 2;
+  string purpose             = 3;
+  string object_key          = 4;
+  string content_type        = 5;
+  int32  expires_in_seconds  = 6;
+}
+
+message PresignDownloadRequest {
+  string actor_user_id       = 1;
+  string role                = 2;
+  string purpose             = 3;
+  string object_key          = 4;
+  int32  expires_in_seconds  = 5;
+}
+
+message PresignUrlResponse {
+  bool   success             = 1;
+  string message             = 2;
+  string url                 = 3;
+  string method              = 4;
+  string object_key          = 5;
+  int32  expires_in_seconds  = 6;
+}

@@ -1,0 +1,53 @@
+syntax = "proto3";
+package wallet;
+
+service WalletService {
+  rpc GetBalance       (BalanceRequest)   returns (BalanceResponse);
+  rpc GetWalletByOwner (OwnerWalletRequest) returns (OwnerWalletResponse);
+  rpc LockFunds        (FundsRequest)     returns (FundsResponse);
+  rpc UnlockFunds      (FundsRequest)     returns (FundsResponse);
+  rpc ReleaseFunds     (ReleaseRequest)   returns (FundsResponse);
+  rpc FundWallet       (FundRequest)      returns (FundsResponse);
+  rpc DeductBalance    (DeductRequest)    returns (DeductResponse);
+}
+
+message BalanceRequest  { string wallet_id = 1; }
+message BalanceResponse { int64 balance = 1; int64 locked_balance = 2; string currency = 3; }
+
+message OwnerWalletRequest {
+  string owner_id = 1;
+  string currency = 2;
+}
+
+message OwnerWalletResponse {
+  bool found = 1;
+  string wallet_id = 2;
+}
+
+message FundsRequest  {
+  string wallet_id   = 1;
+  int64  amount      = 2;
+  string reference   = 3;
+  string reason      = 4;
+  string source_type = 5;
+  string source_id   = 6;
+  string escrow_id   = 7;
+}
+message FundsResponse { bool   success   = 1; string message = 2; }
+
+message FundRequest   { string wallet_id = 1; int64 amount = 2; string reference = 3; string currency = 4; }
+
+message ReleaseRequest {
+  string from_wallet_id = 1;
+  string to_wallet_id   = 2;
+  int64  amount         = 3;
+  string reference      = 4;
+  string escrow_id      = 5;
+  string reason         = 6;
+  string source_type    = 7;
+  string source_id      = 8;
+}
+
+// DeductBalance: atomically subtract balance (used by payout before bank transfer)
+message DeductRequest  { string wallet_id = 1; int64 amount = 2; string reference = 3; }
+message DeductResponse { bool success = 1; int64 new_balance = 2; string message = 3; }

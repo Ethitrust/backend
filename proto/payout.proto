@@ -1,0 +1,42 @@
+syntax = "proto3";
+package payout;
+
+service PayoutService {
+  rpc ListPayouts (ListPayoutsRequest) returns (ListPayoutsResponse);
+  rpc RetryPayoutTransfer (RetryPayoutTransferRequest) returns (PayoutResponse);
+}
+
+message ListPayoutsRequest {
+  string status = 1;
+  int32 page = 2;
+  int32 limit = 3;
+}
+
+message RetryPayoutTransferRequest {
+  string payout_id = 1;
+}
+
+message PayoutResponse {
+  string id = 1;
+  string user_id = 2;
+  string wallet_id = 3;
+  int64 amount = 4;
+  string currency = 5;
+  string bank_code = 6;
+  string account_number = 7;
+  string account_name = 8;
+  string status = 9;
+  string provider = 10;
+  string provider_ref = 11;
+  string failure_reason = 12;
+  string created_at = 13;
+  string updated_at = 14;
+}
+
+message ListPayoutsResponse {
+  repeated PayoutResponse items = 1;
+  int32 total = 2;
+  int32 page = 3;
+  int32 limit = 4;
+  int32 pages = 5;
+}

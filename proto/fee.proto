@@ -1,0 +1,25 @@
+syntax = "proto3";
+package fee;
+
+service FeeService {
+  rpc RefundFeeForEscrow (RefundFeeForEscrowRequest) returns (RefundFeeForEscrowResponse);
+}
+
+message RefundFeeForEscrowRequest {
+  string escrow_id = 1;
+}
+
+message FeeLedgerResponse {
+  string id = 1;
+  string escrow_id = 2;
+  string fee_type = 3;
+  int64 amount = 4;
+  string currency = 5;
+  string paid_by = 6;
+  string status = 7;
+  string created_at = 8;
+}
+
+message RefundFeeForEscrowResponse {
+  repeated FeeLedgerResponse items = 1;
+}
