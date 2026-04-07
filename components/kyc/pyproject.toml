@@ -11,7 +11,7 @@ dependencies = [
     "asyncpg==0.29.0",
     "grpcio==1.78.0",
     "grpcio-tools==1.78.0",
-    "protobuf==6.31.1",
+    "protobuf==6.33.5",
     "PyJWT==2.9.0",
     "redis[asyncio]==5.1.0",
     "alembic>=1.13.0"

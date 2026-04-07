@@ -26,7 +26,6 @@ PROTO_TARGETS: dict[str, list[str]] = {
         "components/user/proto",
         "components/wallet/proto",
         "components/escrow/proto",
-        "components/payment_link/proto",
         "components/payout/proto",
         "components/dispute/proto",
         "components/notification/proto",
@@ -62,7 +61,6 @@ PROTO_TARGETS: dict[str, list[str]] = {
     # Server: payment_provider | Clients: payment_link, escrow, wallet
     "payment_provider.proto": [
         "components/payment_provider/proto",
-        "components/payment_link/proto",
         "components/escrow/proto",
         "components/wallet/proto",
         "components/payout/proto",
@@ -73,7 +71,6 @@ PROTO_TARGETS: dict[str, list[str]] = {
     "organization.proto": [
         "components/organization/proto",
         "components/escrow/proto",
-        "components/payment_link/proto",
         "components/payout/proto",
         "components/dispute/proto",
         "components/notification/proto",
