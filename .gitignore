@@ -12,3 +12,4 @@ wheels/
 venv/
 *.lock
 .pytest_cache
+NOTES.md
