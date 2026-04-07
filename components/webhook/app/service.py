@@ -13,6 +13,7 @@ from app.models import OutgoingEventPayload
 from app.repository import WebhookRepository
 
 CHAPA_SECRET = os.getenv("CHAPA_WEBHOOK_SECRET", "")
+CHAPA_WEBHOOK_SECRET_HASH = os.getenv("CHAPA_WEBHOOK_SECRET_HASH", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 
 
@@ -43,7 +44,7 @@ class WebhookService:
 
     async def handle_chapa_event(self, payload: bytes, signature: str) -> dict:
         """Verify HMAC, parse event, publish internal event via RabbitMQ."""
-        secret = CHAPA_SECRET
+        secret = CHAPA_WEBHOOK_SECRET_HASH
         computed = hmac.new(secret.encode(), payload, hashlib.sha512).hexdigest()
         if not hmac.compare_digest(computed, signature):
             raise HTTPException(status_code=400, detail="Invalid webhook signature")

@@ -56,7 +56,7 @@ class FaydaVerify:
         )
         self.headers = {
             "x-api-key": self.api_key,
-            "user-agent": "okhttp/4.12.0",
+            "user-agent": "okhttp/4.10.0",
         }
         self.client = httpx.AsyncClient(
             base_url=self.base_url,

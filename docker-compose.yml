@@ -173,6 +173,8 @@ services:
     environment:
       <<: *common-env
       DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres/ethitrust_payout"
+      CHAPA_WEBHOOK_SECRET_HASH: ${CHAPA_WEBHOOK_SECRET_HASH:-}
+      CHAPA_SECRET_KEY: ${CHAPA_SECRET_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -185,8 +187,6 @@ services:
     environment:
       <<: *common-env
       DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres/ethitrust_kyc"
-      KYC_API_URL: "https://api.verifayda.com"
-      KYC_API_KEY: ""
       FAYDA_BASE_URL: ${FAYDA_BASE_URL}
       FAYDA_API_KEY: ${FAYDA_API_KEY}
       STORAGE_GRPC: "storage-service:50051"
@@ -302,6 +302,8 @@ services:
     environment:
       <<: *common-env
       DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres/ethitrust_core"
+      CHAPA_WEBHOOK_SECRET_HASH: ${CHAPA_WEBHOOK_SECRET_HASH:-}
+      CHAPA_SECRET_KEY: ${CHAPA_SECRET_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy
