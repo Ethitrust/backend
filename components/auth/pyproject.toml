@@ -29,5 +29,8 @@ test = [
     "aiosqlite==0.20.0",
 ]
 
+[project.scripts]
+create-admin = "scripts.create_admin:main"
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

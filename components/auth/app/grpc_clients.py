@@ -90,6 +90,28 @@ async def update_email_verification_status(user_id: str, is_verified: bool) -> N
         raise RuntimeError(response.message or "User service sync failed")
 
 
+async def update_user_role(user_id: str, role: str) -> None:
+    import proto.user_pb2 as user_pb2
+    import proto.user_pb2_grpc as user_pb2_grpc
+
+    request = user_pb2.UpdateRoleRequest(user_id=user_id, role=role)
+
+    try:
+        async with grpc.aio.insecure_channel(USER_GRPC) as channel:
+            stub = user_pb2_grpc.UserServiceStub(channel)
+            if not hasattr(stub, "UpdateRole"):
+                raise RuntimeError(
+                    "UserService.UpdateRole RPC is unavailable in generated stubs. "
+                    "Regenerate protobuf files from proto/user.proto."
+                )
+            response = await stub.UpdateRole(request, timeout=5.0)
+    except grpc.aio.AioRpcError as exc:
+        raise RuntimeError(f"User service sync failed: {exc.details()}") from exc
+
+    if not response.success:
+        raise RuntimeError(response.message or "User service sync failed")
+
+
 async def associate_escrow_with_user(user_id: str, escrow_id: str) -> None:
     """Associate a user with an escrow in the User service."""
     import proto.escrow_pb2 as escrow_pb2
