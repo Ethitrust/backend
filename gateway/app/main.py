@@ -226,6 +226,19 @@ def _resolve_timeout_for_path(path: str) -> httpx.Timeout:
     return httpx.Timeout(DEFAULT_UPSTREAM_TIMEOUT_SECONDS)
 
 
+def _apply_timeout_to_request(
+    upstream_request: httpx.Request,
+    timeout: httpx.Timeout,
+) -> None:
+    """Attach per-request timeout in a way compatible with httpx 0.27.x."""
+    upstream_request.extensions["timeout"] = {
+        "connect": timeout.connect,
+        "read": timeout.read,
+        "write": timeout.write,
+        "pool": timeout.pool,
+    }
+
+
 def _get_header_case_insensitive(headers: dict[str, str], name: str) -> str | None:
     target = name.lower()
     for key, value in headers.items():
@@ -305,10 +318,10 @@ async def _send_with_resilience(
     last_exc: Exception | None = None
     for attempt in range(1, max_attempts + 1):
         try:
+            _apply_timeout_to_request(upstream_request, timeout)
             response = await client.send(
                 upstream_request,
                 stream=True,
-                timeout=timeout,
             )
 
             if retryable and response.status_code >= 500 and attempt < max_attempts:
