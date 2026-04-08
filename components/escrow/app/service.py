@@ -170,6 +170,53 @@ class EscrowService:
             return "counterparty"
         return None
 
+    def get_status_message(self, escrow: Escrow) -> str | None:
+        """Return a user-facing explanation for escrow status."""
+        if escrow.status == "pending":
+            if escrow.funded_at is None:
+                return (
+                    "Escrow is pending because buyer funds are not locked yet. "
+                    "Fund the buyer wallet to continue."
+                )
+            return "Escrow is pending while payment confirmation is being finalized."
+
+        if escrow.status == "counter_pending_initiator":
+            return "Waiting for initiator to respond to the latest counter-offer."
+
+        if escrow.status == "counter_pending_counterparty":
+            return "Waiting for counterparty to respond to the latest counter-offer."
+
+        if escrow.status == "invited":
+            return "Invitation sent. Waiting for counterparty to accept, counter, or reject."
+
+        return None
+
+    async def _publish_invitation_response_notifications(
+        self,
+        escrow: Escrow,
+        *,
+        action: str,
+        actor_user_id: uuid.UUID,
+    ) -> None:
+        """Publish invitation response updates for all known participants."""
+        participant_ids: set[uuid.UUID] = {escrow.initiator_id}
+        if escrow.receiver_id is not None:
+            participant_ids.add(escrow.receiver_id)
+
+        for participant_id in participant_ids:
+            await publish(
+                "escrow.invite_responded",
+                {
+                    "escrow_id": str(escrow.id),
+                    "status": escrow.status,
+                    "offer_version": escrow.offer_version,
+                    "action": action,
+                    "actor_user_id": str(actor_user_id),
+                    "user_id": str(participant_id),
+                    "receiver_email": escrow.receiver_email,
+                },
+            )
+
     def _assert_transition_allowed(
         self,
         current_status: str,
@@ -1122,13 +1169,10 @@ class EscrowService:
             escrow,
             actor,
         )
-        await publish(
-            "escrow.invite_responded",
-            {
-                "escrow_id": str(escrow.id),
-                "status": escrow.status,
-                "offer_version": escrow.offer_version,
-            },
+        await self._publish_invitation_response_notifications(
+            escrow,
+            action="accepted",
+            actor_user_id=user_id,
         )
         return escrow, payment_url
 
@@ -1182,11 +1226,18 @@ class EscrowService:
 
         escrow.status = "rejected"
         escrow = await self.repo.save(escrow)
+        await self._publish_invitation_response_notifications(
+            escrow,
+            action="rejected",
+            actor_user_id=user_id,
+        )
         await publish(
             "escrow.invite_rejected",
             {
                 "escrow_id": str(escrow.id),
                 "offer_version": escrow.offer_version,
+                "actor_user_id": str(user_id),
+                "user_id": str(escrow.initiator_id),
             },
         )
         return escrow
@@ -1329,6 +1380,11 @@ class EscrowService:
         )
 
         escrow = await self.repo.save(escrow)
+        await self._publish_invitation_response_notifications(
+            escrow,
+            action="countered",
+            actor_user_id=user_id,
+        )
         await publish(
             "escrow.invite_countered",
             {
@@ -1336,6 +1392,9 @@ class EscrowService:
                 "offer_version": escrow.offer_version,
                 "countered_by": str(user_id),
                 "counter_status": escrow.counter_status,
+                "actor_user_id": str(user_id),
+                "user_id": str(proposed_to_user_id),
+                "receiver_email": escrow.receiver_email,
             },
         )
         return escrow

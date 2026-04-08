@@ -314,7 +314,42 @@ async def test_accept_invitation_transitions_to_active_when_wallet_lock_succeeds
     assert accept_resp.status_code == 200, accept_resp.text
     data = accept_resp.json()
     assert data["escrow"]["status"] == "active"
+    assert data["escrow"]["status_message"] is None
     assert data["payment_url"] is None
+
+
+@pytest.mark.asyncio
+async def test_accept_invitation_keeps_pending_with_status_message_on_insufficient_balance(
+    client,
+    monkeypatch,
+):
+    """Receiver acceptance should keep escrow pending with a clear status message when lock fails due to funds."""
+    monkeypatch.setattr(
+        "app.grpc_clients.lock_funds",
+        AsyncMock(side_effect=RuntimeError("INSUFFICIENT_BALANCE")),
+    )
+
+    payload = {
+        "escrow_type": "onetime",
+        "title": "Pending reason",
+        "currency": "ETB",
+        "amount": 25_000,
+        "initiator_role": "buyer",
+        "receiver_id": "22222222-2222-4222-8222-22222222222b",
+    }
+    create_resp = await client.post("/escrow", json=payload, headers=AUTH_HEADER)
+    assert create_resp.status_code == 201
+    escrow_id = create_resp.json()["escrow"]["id"]
+
+    accept_resp = await client.post(
+        f"/escrow/{escrow_id}/accept",
+        json={},
+        headers=RECEIVER_HEADER,
+    )
+    assert accept_resp.status_code == 200, accept_resp.text
+    data = accept_resp.json()
+    assert data["escrow"]["status"] == "pending"
+    assert "funds are not locked yet" in data["escrow"]["status_message"].lower()
 
 
 @pytest.mark.asyncio

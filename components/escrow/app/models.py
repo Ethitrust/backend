@@ -231,6 +231,7 @@ class EscrowResponse(BaseModel):
     transaction_ref: str
     escrow_type: str
     status: str
+    status_message: Optional[str] = None
     initiator_actor_type: Literal["user", "organization"]
     initiator_id: Optional[uuid.UUID]
     initiator_org_id: Optional[uuid.UUID]

@@ -169,7 +169,7 @@ async def test_accept_invitation_locks_wallet_and_transitions_to_active(svc, rep
     with (
         patch("app.grpc_clients.get_user_wallet", AsyncMock(return_value="wallet-1")),
         patch("app.grpc_clients.lock_funds", AsyncMock(return_value=True)),
-        patch("app.messaging.publish", AsyncMock()),
+        patch("app.messaging.publish", AsyncMock()) as mock_publish,
     ):
         result, payment_url = await svc.accept_invitation(
             escrow.id,
@@ -179,6 +179,18 @@ async def test_accept_invitation_locks_wallet_and_transitions_to_active(svc, rep
 
     assert result.status == "active"
     assert payment_url is None
+    mock_publish.assert_any_await(
+        "escrow.invite_responded",
+        {
+            "escrow_id": str(escrow.id),
+            "status": "active",
+            "offer_version": escrow.offer_version,
+            "action": "accepted",
+            "actor_user_id": str(TEST_RECEIVER_ID),
+            "user_id": str(TEST_USER_ID),
+            "receiver_email": escrow.receiver_email,
+        },
+    )
 
 
 @pytest.mark.asyncio
@@ -198,7 +210,7 @@ async def test_accept_invitation_insufficient_balance_keeps_pending(svc, repo):
             "app.grpc_clients.lock_funds",
             AsyncMock(side_effect=RuntimeError("INSUFFICIENT_BALANCE")),
         ),
-        patch("app.messaging.publish", AsyncMock()),
+        patch("app.messaging.publish", AsyncMock()) as mock_publish,
     ):
         result, payment_url = await svc.accept_invitation(
             escrow.id,
@@ -208,6 +220,18 @@ async def test_accept_invitation_insufficient_balance_keeps_pending(svc, repo):
 
     assert result.status == "pending"
     assert payment_url is None
+    mock_publish.assert_any_await(
+        "escrow.invite_responded",
+        {
+            "escrow_id": str(escrow.id),
+            "status": "pending",
+            "offer_version": escrow.offer_version,
+            "action": "accepted",
+            "actor_user_id": str(TEST_RECEIVER_ID),
+            "user_id": str(TEST_USER_ID),
+            "receiver_email": escrow.receiver_email,
+        },
+    )
 
 
 @pytest.mark.asyncio
@@ -249,7 +273,7 @@ async def test_counter_invitation_increments_version(svc, repo):
     repo.save = AsyncMock(return_value=escrow)
     repo.create_counter_offer = AsyncMock()
 
-    with patch("app.messaging.publish", AsyncMock()):
+    with patch("app.messaging.publish", AsyncMock()) as mock_publish:
         result = await svc.counter_invitation(
             escrow.id,
             TEST_RECEIVER_ID,
@@ -273,6 +297,18 @@ async def test_counter_invitation_increments_version(svc, repo):
     assert result.counter_status == "awaiting_initiator"
     assert result.last_countered_by_id == TEST_RECEIVER_ID
     repo.create_counter_offer.assert_awaited_once()
+    mock_publish.assert_any_await(
+        "escrow.invite_responded",
+        {
+            "escrow_id": str(escrow.id),
+            "status": "counter_pending_counterparty",
+            "offer_version": result.offer_version,
+            "action": "countered",
+            "actor_user_id": str(TEST_RECEIVER_ID),
+            "user_id": str(TEST_USER_ID),
+            "receiver_email": escrow.receiver_email,
+        },
+    )
 
 
 @pytest.mark.asyncio
@@ -290,7 +326,7 @@ async def test_counter_invitation_marks_previous_as_countered_again(svc, repo):
     repo.create_counter_offer = AsyncMock()
     repo.save = AsyncMock(return_value=escrow)
 
-    with patch("app.messaging.publish", AsyncMock()):
+    with patch("app.messaging.publish", AsyncMock()) as mock_publish:
         result = await svc.counter_invitation(
             escrow.id,
             TEST_RECEIVER_ID,
@@ -311,6 +347,18 @@ async def test_counter_invitation_marks_previous_as_countered_again(svc, repo):
     assert pending_counter.status == "countered_again"
     assert result.status == "counter_pending_initiator"
     assert result.counter_status == "awaiting_initiator"
+    mock_publish.assert_any_await(
+        "escrow.invite_responded",
+        {
+            "escrow_id": str(escrow.id),
+            "status": "counter_pending_initiator",
+            "offer_version": result.offer_version,
+            "action": "countered",
+            "actor_user_id": str(TEST_RECEIVER_ID),
+            "user_id": str(TEST_USER_ID),
+            "receiver_email": escrow.receiver_email,
+        },
+    )
 
 
 @pytest.mark.asyncio

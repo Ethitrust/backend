@@ -43,6 +43,15 @@ class AuthRepository:
         await self.db.refresh(user)
         return user
 
+    async def delete_user(self, user_id: uuid.UUID) -> bool:
+        result = await self.db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        if user is None:
+            return False
+        await self.db.delete(user)
+        await self.db.flush()
+        return True
+
     async def set_verified(self, user_id: uuid.UUID) -> None:
         result = await self.db.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()

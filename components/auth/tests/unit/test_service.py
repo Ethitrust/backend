@@ -46,6 +46,7 @@ def _make_repo(user=None) -> MagicMock:
     repo.get_by_email = AsyncMock(return_value=user)
     repo.get_by_id = AsyncMock(return_value=user)
     repo.create_user = AsyncMock(return_value=user or _make_user())
+    repo.delete_user = AsyncMock(return_value=True)
     repo.set_verified = AsyncMock()
     repo.update_password = AsyncMock()
     repo.create_session = AsyncMock()

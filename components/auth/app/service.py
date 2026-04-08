@@ -107,6 +107,7 @@ class AuthService:
                 otp=otp,
             )
         except RuntimeError as exc:
+            await self.repo.delete_user(user.id)
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Could not synchronize user profile",
