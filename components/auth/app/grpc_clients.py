@@ -23,6 +23,7 @@ if str(_PROTO_DIR) not in proto_paths:
     proto_module.__path__ = [*proto_paths, str(_PROTO_DIR)]
 
 USER_GRPC = os.getenv("USER_GRPC", "user-service:50051")
+ESCROW_GRPC = os.getenv("ESCROW_GRPC", "escrow-service:50051")
 
 
 async def sync_user(
@@ -123,7 +124,7 @@ async def associate_escrow_with_user(user_id: str, escrow_id: str) -> None:
     )
 
     try:
-        async with grpc.aio.insecure_channel(USER_GRPC) as channel:
+        async with grpc.aio.insecure_channel(ESCROW_GRPC) as channel:
             stub = escrow_pb2_grpc.EscrowServiceStub(channel)
             if not hasattr(stub, "AssociateUserWithEscrow"):
                 raise RuntimeError(
@@ -132,10 +133,12 @@ async def associate_escrow_with_user(user_id: str, escrow_id: str) -> None:
                 )
             response = await stub.AssociateUserWithEscrow(request, timeout=5.0)
     except grpc.aio.AioRpcError as exc:
-        raise RuntimeError(f"User service sync failed: {exc.details()}") from exc
+        raise RuntimeError(
+            f"Escrow service association failed: {exc.details()}"
+        ) from exc
 
     if not response.success:
-        raise RuntimeError(response.message or "User service sync failed")
+        raise RuntimeError(response.message or "Escrow service association failed")
 
 
 async def update_email_verifiication_status(user_id: str, is_verified: bool) -> None:
