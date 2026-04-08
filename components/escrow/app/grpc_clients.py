@@ -110,9 +110,6 @@ async def get_user_by_email(email: str) -> dict | None:
     except grpc.aio.AioRpcError as exc:
         raise RuntimeError("Unable to fetch user profile by email") from exc
 
-    if not response.found:
-        return None
-
     return {
         "user_id": response.user_id,
         "email": response.email,
