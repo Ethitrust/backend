@@ -145,15 +145,20 @@ def configure_logging(service_name: str) -> None:
     formatter = logging.Formatter(
         "%(asctime)s | %(levelname)s | service=%(service)s | "
         "request_id=%(request_id)s | correlation_id=%(correlation_id)s | "
-        "%(name)s | %(message)s"
+        "%(name)s | %(message)s",
+        defaults={
+            "service": service_name,
+            "request_id": "-",
+            "correlation_id": "-",
+        },
     )
 
     stream_handler = logging.StreamHandler()
     stream_handler.setFormatter(formatter)
+    stream_handler.addFilter(_ServiceContextFilter(service_name))
 
     root_logger.handlers.clear()
     root_logger.addHandler(stream_handler)
-    root_logger.addFilter(_ServiceContextFilter(service_name))
     root_logger.setLevel(level)
     root_logger._ethitrust_logging_configured = True
 

@@ -6,5 +6,7 @@ RUN pip install --no-cache-dir .
 FROM base AS final
 COPY app/ ./app/
 COPY proto/ ./proto/
+COPY alembic/ ./alembic/
+COPY alembic.ini ./alembic.ini
 EXPOSE 8000 50051
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
