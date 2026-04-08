@@ -6,6 +6,4 @@ FROM base AS final
 COPY app/ ./app/
 COPY proto/ ./proto/
 EXPOSE 8000 50051
-COPY alembic/ ./alembic/
-COPY alembic.ini ./alembic.ini
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
