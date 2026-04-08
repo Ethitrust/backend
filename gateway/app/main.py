@@ -2,12 +2,20 @@
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from uuid import uuid4
 
 import httpx
+import redis.asyncio as redis
 from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import StreamingResponse
+from starlette.background import BackgroundTask
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -47,6 +55,48 @@ KYC_ENFORCEMENT_ENABLED = os.getenv("KYC_ENFORCEMENT_ENABLED", "true").lower() i
     "on",
 }
 KYC_MIN_LEVEL = int(os.getenv("KYC_MIN_LEVEL", "1"))
+KYC_CACHE_ENABLED = os.getenv("KYC_CACHE_ENABLED", "true").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+KYC_CACHE_TTL_SECONDS = int(os.getenv("KYC_CACHE_TTL_SECONDS", "60"))
+KYC_CACHE_PREFIX = os.getenv("KYC_CACHE_PREFIX", "gateway:kyc")
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
+
+DEFAULT_UPSTREAM_TIMEOUT_SECONDS = float(
+    os.getenv("GATEWAY_DEFAULT_TIMEOUT_SECONDS", "30")
+)
+INVOICE_TIMEOUT_SECONDS = float(os.getenv("GATEWAY_INVOICE_TIMEOUT_SECONDS", "60"))
+KYC_SERVICE_TIMEOUT_SECONDS = float(os.getenv("GATEWAY_KYC_TIMEOUT_SECONDS", "10"))
+
+RETRY_ENABLED = os.getenv("GATEWAY_RETRY_ENABLED", "true").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+RETRY_MAX_ATTEMPTS = int(os.getenv("GATEWAY_RETRY_MAX_ATTEMPTS", "3"))
+RETRY_BACKOFF_BASE_SECONDS = float(
+    os.getenv("GATEWAY_RETRY_BACKOFF_BASE_SECONDS", "0.2")
+)
+RETRY_BACKOFF_MAX_SECONDS = float(os.getenv("GATEWAY_RETRY_BACKOFF_MAX_SECONDS", "1.0"))
+
+CIRCUIT_BREAKER_ENABLED = os.getenv(
+    "GATEWAY_CIRCUIT_BREAKER_ENABLED", "true"
+).lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+CIRCUIT_BREAKER_FAILURE_THRESHOLD = int(
+    os.getenv("GATEWAY_CIRCUIT_BREAKER_FAILURE_THRESHOLD", "5")
+)
+CIRCUIT_BREAKER_OPEN_SECONDS = float(
+    os.getenv("GATEWAY_CIRCUIT_BREAKER_OPEN_SECONDS", "30")
+)
 
 _KYC_EXEMPT_PREFIXES = (
     "/auth",
@@ -59,6 +109,19 @@ _KYC_EXEMPT_PREFIXES = (
 # Sorted by longest prefix first to avoid shorter prefix stealing matches
 _SORTED_PREFIXES = sorted(SERVICE_MAP, key=len, reverse=True)
 
+_SERVICE_TIMEOUTS: dict[str, httpx.Timeout] = {
+    "/invoice": httpx.Timeout(INVOICE_TIMEOUT_SECONDS),
+    "/kyc": httpx.Timeout(KYC_SERVICE_TIMEOUT_SECONDS),
+}
+_TIMEOUT_PREFIXES = sorted(_SERVICE_TIMEOUTS, key=len, reverse=True)
+_IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "PUT", "DELETE"})
+
+
+@dataclass(slots=True)
+class _CircuitState:
+    failures: int = 0
+    opened_until_monotonic: float = 0.0
+
 
 def _resolve_target(path: str) -> tuple[str, str] | None:
     """Return (base_url, upstream_path) for the first matching prefix."""
@@ -70,6 +133,67 @@ def _resolve_target(path: str) -> tuple[str, str] | None:
 
 def _authorization_header(request: Request) -> str | None:
     return request.headers.get("Authorization")
+
+
+def _extract_bearer_token(authorization: str | None) -> str | None:
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    token = authorization.removeprefix("Bearer ").strip()
+    return token or None
+
+
+def _is_probable_org_api_key(token: str) -> bool:
+    # Current org secret keys use `sk_`; require no JWT-like dot separators.
+    return token.startswith("sk_") and "." not in token
+
+
+def _token_cache_key(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _kyc_cache_redis_key(token: str) -> str:
+    return f"{KYC_CACHE_PREFIX}:{_token_cache_key(token)}"
+
+
+async def _get_cached_kyc_level(request: Request, token: str) -> int | None:
+    if not KYC_CACHE_ENABLED:
+        return None
+
+    redis_client: redis.Redis | None = request.app.state.redis_client
+    if redis_client is None:
+        return None
+
+    try:
+        cached_value = await redis_client.get(_kyc_cache_redis_key(token))
+    except redis.RedisError:
+        logger.warning("KYC redis cache read failed; falling back to user service")
+        return None
+
+    if cached_value is None:
+        return None
+
+    try:
+        return int(cached_value)
+    except ValueError:
+        return None
+
+
+async def _set_cached_kyc_level(request: Request, token: str, kyc_level: int) -> None:
+    if not KYC_CACHE_ENABLED:
+        return
+
+    redis_client: redis.Redis | None = request.app.state.redis_client
+    if redis_client is None:
+        return
+
+    try:
+        await redis_client.set(
+            _kyc_cache_redis_key(token),
+            str(kyc_level),
+            ex=KYC_CACHE_TTL_SECONDS,
+        )
+    except redis.RedisError:
+        logger.warning("KYC redis cache write failed; continuing without cache")
 
 
 def _is_kyc_exempt_path(path: str, method: str) -> bool:
@@ -89,10 +213,138 @@ def _is_org_api_key_escrow_create(
 ) -> bool:
     if path != "/escrow" or method != "POST":
         return False
-    if not authorization or not authorization.startswith("Bearer "):
+    token = _extract_bearer_token(authorization)
+    if token is None:
         return False
-    token = authorization.removeprefix("Bearer ").strip()
-    return token.startswith("sk_")
+    return _is_probable_org_api_key(token)
+
+
+def _resolve_timeout_for_path(path: str) -> httpx.Timeout:
+    for prefix in _TIMEOUT_PREFIXES:
+        if path == prefix or path.startswith(f"{prefix}/"):
+            return _SERVICE_TIMEOUTS[prefix]
+    return httpx.Timeout(DEFAULT_UPSTREAM_TIMEOUT_SECONDS)
+
+
+def _get_header_case_insensitive(headers: dict[str, str], name: str) -> str | None:
+    target = name.lower()
+    for key, value in headers.items():
+        if key.lower() == target:
+            return value
+    return None
+
+
+def _append_forwarded_for(
+    existing_value: str | None, client_ip: str | None
+) -> str | None:
+    if not client_ip:
+        return existing_value
+    if not existing_value:
+        return client_ip
+    return f"{existing_value}, {client_ip}"
+
+
+def _apply_forwarding_headers(request: Request, req_headers: dict[str, str]) -> None:
+    existing_xff = _get_header_case_insensitive(req_headers, "X-Forwarded-For")
+    req_headers["X-Forwarded-For"] = (
+        _append_forwarded_for(
+            existing_xff,
+            request.client.host if request.client else None,
+        )
+        or ""
+    )
+
+    request_id = _get_header_case_insensitive(req_headers, "X-Request-ID")
+    req_headers["X-Request-ID"] = request_id or str(uuid4())
+    req_headers["X-Forwarded-Proto"] = request.url.scheme
+
+    host_header = _get_header_case_insensitive(req_headers, "Host")
+    req_headers["X-Forwarded-Host"] = host_header or request.url.hostname or ""
+
+
+def _is_retryable_method(method: str) -> bool:
+    return method.upper() in _IDEMPOTENT_METHODS
+
+
+def _circuit_is_open(state: _CircuitState) -> bool:
+    return state.opened_until_monotonic > time.monotonic()
+
+
+def _record_circuit_success(state: _CircuitState) -> None:
+    state.failures = 0
+    state.opened_until_monotonic = 0.0
+
+
+def _record_circuit_failure(state: _CircuitState) -> None:
+    state.failures += 1
+    if state.failures >= CIRCUIT_BREAKER_FAILURE_THRESHOLD:
+        state.opened_until_monotonic = time.monotonic() + CIRCUIT_BREAKER_OPEN_SECONDS
+
+
+async def _send_with_resilience(
+    request: Request,
+    client: httpx.AsyncClient,
+    upstream_request: httpx.Request,
+    *,
+    service_prefix: str,
+    timeout: httpx.Timeout,
+) -> httpx.Response:
+    method = upstream_request.method.upper()
+    retryable = RETRY_ENABLED and _is_retryable_method(method)
+    max_attempts = max(1, RETRY_MAX_ATTEMPTS if retryable else 1)
+
+    circuit_map: dict[str, _CircuitState] = request.app.state.circuit_breakers
+    state = circuit_map.setdefault(service_prefix, _CircuitState())
+
+    if CIRCUIT_BREAKER_ENABLED and _circuit_is_open(state):
+        raise HTTPException(
+            status_code=503,
+            detail=f"Service temporarily unavailable for {service_prefix}",
+        )
+
+    last_exc: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            response = await client.send(
+                upstream_request,
+                stream=True,
+                timeout=timeout,
+            )
+
+            if retryable and response.status_code >= 500 and attempt < max_attempts:
+                await response.aclose()
+                delay = min(
+                    RETRY_BACKOFF_BASE_SECONDS * (2 ** (attempt - 1)),
+                    RETRY_BACKOFF_MAX_SECONDS,
+                )
+                await asyncio.sleep(delay)
+                continue
+
+            _record_circuit_success(state)
+            return response
+        except (httpx.TimeoutException, httpx.ConnectError) as exc:
+            last_exc = exc
+            _record_circuit_failure(state)
+
+            if attempt >= max_attempts:
+                break
+
+            delay = min(
+                RETRY_BACKOFF_BASE_SECONDS * (2 ** (attempt - 1)),
+                RETRY_BACKOFF_MAX_SECONDS,
+            )
+            await asyncio.sleep(delay)
+
+    if isinstance(last_exc, httpx.TimeoutException):
+        raise HTTPException(
+            status_code=504, detail="Upstream service timed out"
+        ) from last_exc
+    if isinstance(last_exc, httpx.ConnectError):
+        raise HTTPException(
+            status_code=502,
+            detail="Could not connect to upstream service",
+        ) from last_exc
+    raise HTTPException(status_code=502, detail="Upstream service request failed")
 
 
 async def _enforce_kyc_if_required(request: Request) -> None:
@@ -106,10 +358,23 @@ async def _enforce_kyc_if_required(request: Request) -> None:
         return
 
     authorization = _authorization_header(request)
-    if not authorization or not authorization.startswith("Bearer "):
+    token = _extract_bearer_token(authorization)
+    if token is None:
         return
 
     if _is_org_api_key_escrow_create(path, method, authorization):
+        return
+
+    cached_kyc = await _get_cached_kyc_level(request, token)
+    if cached_kyc is not None:
+        if cached_kyc < KYC_MIN_LEVEL:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "KYC verification is required before accessing this resource. "
+                    "Please complete KYC first."
+                ),
+            )
         return
 
     client: httpx.AsyncClient = request.app.state.http_client
@@ -117,6 +382,7 @@ async def _enforce_kyc_if_required(request: Request) -> None:
         profile_response = await client.get(
             f"{USER_SERVICE_URL.rstrip('/')}/users/me",
             headers={"Authorization": authorization},
+            timeout=_resolve_timeout_for_path("/users/me"),
         )
     except httpx.TimeoutException as exc:
         raise HTTPException(
@@ -145,8 +411,16 @@ async def _enforce_kyc_if_required(request: Request) -> None:
             detail="Unable to verify KYC status for this account",
         )
 
-    profile = profile_response.json()
+    try:
+        profile = profile_response.json()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Unable to verify KYC status at this time",
+        ) from exc
+
     kyc_level = int(profile.get("kyc_level", 0))
+    await _set_cached_kyc_level(request, token, kyc_level)
     if kyc_level < KYC_MIN_LEVEL:
         raise HTTPException(
             status_code=403,
@@ -159,9 +433,18 @@ async def _enforce_kyc_if_required(request: Request) -> None:
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):  # noqa: ANN001
-    application.state.http_client = httpx.AsyncClient(timeout=30.0)
+    application.state.http_client = httpx.AsyncClient(
+        timeout=httpx.Timeout(DEFAULT_UPSTREAM_TIMEOUT_SECONDS)
+    )
+    application.state.redis_client = (
+        redis.from_url(REDIS_URL, decode_responses=True) if KYC_CACHE_ENABLED else None
+    )
+    application.state.circuit_breakers = {}
     logger.info("Gateway starting — routing %d services", len(SERVICE_MAP))
     yield
+    redis_client: redis.Redis | None = application.state.redis_client
+    if redis_client is not None:
+        await redis_client.aclose()
     await application.state.http_client.aclose()
     logger.info("Gateway shut down")
 
@@ -207,23 +490,30 @@ async def proxy(request: Request, path: str) -> Response:
         for k, v in request.headers.items()
         if k.lower() not in _HOP_BY_HOP and k.lower() != "host"
     }
+    _apply_forwarding_headers(request, req_headers)
 
-    body = await request.body()
     client: httpx.AsyncClient = request.app.state.http_client
+    timeout = _resolve_timeout_for_path(upstream_path)
+    upstream_request = client.build_request(
+        method=request.method,
+        url=target_url,
+        headers=req_headers,
+        content=request.stream(),
+    )
 
     try:
-        upstream_response = await client.request(
-            method=request.method,
-            url=target_url,
-            headers=req_headers,
-            content=body,
+        upstream_response = await _send_with_resilience(
+            request,
+            client,
+            upstream_request,
+            service_prefix=upstream_path.split("/")[1]
+            and f"/{upstream_path.split('/')[1]}",
+            timeout=timeout,
         )
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="Upstream service timed out")
-    except httpx.ConnectError:
+    except RuntimeError as exc:
         raise HTTPException(
-            status_code=502, detail="Could not connect to upstream service"
-        )
+            status_code=502, detail="Could not proxy upstream request"
+        ) from exc
 
     # Filter hop-by-hop response headers
     res_headers = {
@@ -232,10 +522,11 @@ async def proxy(request: Request, path: str) -> Response:
         if k.lower() not in _HOP_BY_HOP
     }
 
-    return Response(
-        content=upstream_response.content,
+    return StreamingResponse(
+        upstream_response.aiter_bytes(),
         status_code=upstream_response.status_code,
         headers=res_headers,
+        background=BackgroundTask(upstream_response.aclose),
     )
 
 
