@@ -48,6 +48,8 @@ SERVICE_MAP: dict[str, str] = {
 }
 
 USER_SERVICE_URL = os.getenv("USER_SERVICE_URL", "http://user-service:8000")
+ENVIRONMENT = os.getenv("ENVIRONMENT", "production").strip().lower()
+IS_DEVELOPMENT = ENVIRONMENT == "development"
 KYC_ENFORCEMENT_ENABLED = os.getenv("KYC_ENFORCEMENT_ENABLED", "true").lower() in {
     "1",
     "true",
@@ -348,6 +350,9 @@ async def _send_with_resilience(
 
 
 async def _enforce_kyc_if_required(request: Request) -> None:
+    if IS_DEVELOPMENT:
+        return
+
     if not KYC_ENFORCEMENT_ENABLED:
         return
 

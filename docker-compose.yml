@@ -8,6 +8,7 @@ x-common-env: &common-env
   SMTP_PASS: ${SMTP_PASS:-}
   FROM_EMAIL: ${FROM_EMAIL:-noreply@ethitrust.com}
   FRONTEND_URL: ${FRONTEND_URL:-https://ethitrust.me}
+  ENVIRONMENT: ${ENVIRONMENT:-development}
 
 services:
   # ─── Infrastructure ───────────────────────────────────────
@@ -132,6 +133,7 @@ services:
     restart: unless-stopped
     environment:
       <<: *common-env
+      ENVIRONMENT: ${ENVIRONMENT:-development}
       DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres/ethitrust_escrow"
       PLATFORM_FEE_PERCENT: "1.5"
       MIN_FEE_AMOUNT: "100"
