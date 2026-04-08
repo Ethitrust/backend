@@ -12,7 +12,8 @@ message CheckoutRequest {
   int64  amount        = 1;
   string currency      = 2;
   string metadata_json = 3;   // JSON-encoded dict
-  string provider      = 4;   // chapa 
+  string provider      = 4;   // chapa
+  string return_url    = 5; 
 }
 
 message CheckoutResponse {

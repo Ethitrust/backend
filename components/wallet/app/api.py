@@ -151,6 +151,7 @@ async def fund_wallet(
         currency=wallet.currency,
         metadata={"wallet_id": str(wallet_id), "user_id": user["user_id"]},
         provider=body.provider,
+        return_url=body.return_url,
     )
     return {
         "payment_url": checkout["payment_url"],

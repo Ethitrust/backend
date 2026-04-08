@@ -36,7 +36,7 @@ import proto.payment_provider_pb2 as payment_provider_pb2
 import proto.payment_provider_pb2_grpc as payment_provider_pb2_grpc
 
 AUTH_GRPC = os.getenv("AUTH_GRPC", "auth-service:50051")
-PAYMENT_GRPC = os.getenv("PAYMENT_GRPC", "payment-provider:50051")
+PAYMENT_GRPC = os.getenv("PAYMENT_GRPC", "payment-provider-service:50051")
 
 
 async def validate_token(token: str) -> dict:
@@ -92,6 +92,7 @@ async def create_checkout(
     amount: int,
     currency: str,
     metadata: dict,
+    return_url: str,
     provider: str = "chapa",
 ) -> dict:
     """Call Payment Provider to create a checkout session.
@@ -103,6 +104,7 @@ async def create_checkout(
         currency=currency,
         metadata_json=json.dumps(metadata),
         provider=provider,
+        return_url=return_url,
     )
 
     try:

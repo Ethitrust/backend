@@ -43,7 +43,7 @@ import proto.wallet_pb2_grpc as wallet_pb2_grpc
 AUTH_GRPC = os.getenv("AUTH_GRPC", "auth-service:50051")
 USER_GRPC = os.getenv("USER_GRPC", "user-service:50051")
 WALLET_GRPC = os.getenv("WALLET_GRPC", "wallet-service:50051")
-PAYMENT_GRPC = os.getenv("PAYMENT_GRPC", "payment-provider:50051")
+PAYMENT_GRPC = os.getenv("PAYMENT_GRPC", "payment-provider-service:50051")
 ORGANIZATION_GRPC = os.getenv("ORGANIZATION_GRPC", "organization-service:50051")
 
 

@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import sys
+import uuid
 from pathlib import Path
 
 import grpc
@@ -35,9 +36,10 @@ proto_paths = list(getattr(proto_module, "__path__", []))
 if str(_PROTO_DIR) not in proto_paths:
     proto_module.__path__ = [*proto_paths, str(_PROTO_DIR)]
 
-import proto.payment_provider_pb2 as payment_provider_pb2
-import proto.payment_provider_pb2_grpc as payment_provider_pb2_grpc
-from app.service import ChapaInitRequest, TransferOptions, get_provider
+import proto.payment_provider_pb2 as payment_provider_pb2  # noqa: E402
+import proto.payment_provider_pb2_grpc as payment_provider_pb2_grpc  # noqa: E402
+
+from app.service import ChapaInitRequest, TransferOptions, get_provider  # noqa: E402
 
 logger = logging.getLogger(__name__)
 GRPC_PORT = int(os.getenv("GRPC_PORT", "50051"))
@@ -56,11 +58,68 @@ class PaymentProviderServicer(payment_provider_pb2_grpc.PaymentProviderServiceSe
                     metadata = json.loads(request.metadata_json)
                 except json.JSONDecodeError:
                     pass
+
+            if not isinstance(metadata, dict):
+                metadata = {}
+
+            tx_ref = str(
+                metadata.get("tx_ref")
+                or metadata.get("transaction_ref")
+                or f"wallet-{uuid.uuid4().hex}"
+            )
+
+            invoices: list[dict[str, str]] = []
+            for key, value in metadata.items():
+                if key in {
+                    "tx_ref",
+                    "transaction_ref",
+                    "payment_reason",
+                    "hide_receipt",
+                    "disable_phone_edit",
+                    "custom_receipt_enabled",
+                    "invoices",
+                }:
+                    continue
+                invoices.append({"key": str(key), "value": str(value)})
+
+            explicit_invoices = metadata.get("invoices")
+            if isinstance(explicit_invoices, list):
+                for item in explicit_invoices:
+                    if not isinstance(item, dict):
+                        continue
+                    key = item.get("key")
+                    value = item.get("value")
+                    if key is None or value is None:
+                        continue
+                    invoices.append({"key": str(key), "value": str(value)})
+
+            chapa_meta: dict | None = None
+            if invoices:
+                chapa_meta = {
+                    "invoices": invoices,
+                    "payment_reason": str(metadata.get("payment_reason"))
+                    if metadata.get("payment_reason") is not None
+                    else None,
+                    "hide_receipt": bool(metadata.get("hide_receipt", False)),
+                    "disable_phone_edit": bool(
+                        metadata.get("disable_phone_edit", False)
+                    ),
+                    "custom_receipt_enabled": bool(
+                        metadata.get("custom_receipt_enabled", False)
+                    ),
+                }
+
             provider = get_provider(request.provider or "chapa")
             request = ChapaInitRequest(
-                amount=request.amount,
+                amount=str(request.amount),
                 currency=request.currency or "ETB",
-                meta=metadata,
+                callback_url=os.getenv(
+                    "CHAPA_CALLBACK_URL", "http://localhost:8000/webhook/chapa"
+                ),
+                return_url=request.return_url
+                or os.getenv("FRONTEND_URL", "http://localhost:3000"),
+                tx_ref=tx_ref,
+                meta=chapa_meta,
             )
             result = await provider.create_checkout(request)
             return payment_provider_pb2.CheckoutResponse(
