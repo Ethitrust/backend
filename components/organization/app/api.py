@@ -32,19 +32,19 @@ KYC_MIN_LEVEL = int(os.getenv("KYC_MIN_LEVEL", "1"))
 security = HTTPBearer(auto_error=False)
 
 
-async def _enforce_kyc_or_raise(user_id: str) -> int:
-    try:
-        profile = await grpc_clients.get_user_by_id(user_id)
-    except RuntimeError as exc:
-        raise HTTPException(503, "Unable to verify KYC status") from exc
+# async def _enforce_kyc_or_raise(user_id: str) -> int:
+#     try:
+#         profile = await grpc_clients.get_user_by_id(user_id)
+#     except RuntimeError as exc:
+#         raise HTTPException(503, "Unable to verify KYC status") from exc
 
-    kyc_level = int(profile.get("kyc_level", 0))
-    if kyc_level < KYC_MIN_LEVEL:
-        raise HTTPException(
-            403,
-            "KYC verification is required before accessing this resource. Please complete KYC first.",
-        )
-    return kyc_level
+#     kyc_level = int(profile.get("kyc_level", 0))
+#     if kyc_level < KYC_MIN_LEVEL:
+#         raise HTTPException(
+#             403,
+#             "KYC verification is required before accessing this resource. Please complete KYC first.",
+#         )
+#     return kyc_level
 
 
 async def get_current_user(
@@ -65,8 +65,8 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)
         ) from exc
 
-    kyc_level = await _enforce_kyc_or_raise(user["user_id"])
-    user["kyc_level"] = kyc_level
+    # kyc_level = await _enforce_kyc_or_raise(user["user_id"])
+    # user["kyc_level"] = kyc_level
     return user
 
 

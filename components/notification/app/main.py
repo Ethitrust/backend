@@ -20,8 +20,6 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):  # noqa: ANN001
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
 
     task = asyncio.create_task(start_consumer())
     logger.info("Notification service starting up")

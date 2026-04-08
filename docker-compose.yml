@@ -18,12 +18,11 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_MULTIPLE_DATABASES: "ethitrust_core,ethitrust_auth,ethitrust_user,ethitrust_wallet,ethitrust_escrow,ethitrust_invoice,ethitrust_payment_link,ethitrust_payout,ethitrust_kyc,ethitrust_dispute,ethitrust_notification,ethitrust_audit,ethitrust_fee,ethitrust_organization,ethitrust_admin"
+      POSTGRES_MULTIPLE_DATABASES: "ethitrust_core,ethitrust_auth,ethitrust_user,ethitrust_wallet,ethitrust_escrow,ethitrust_invoice,ethitrust_payment_link,ethitrust_payout,ethitrust_kyc,ethitrust_dispute,ethitrust_notification,ethitrust_audit,ethitrust_fee,ethitrust_organization,ethitrust_admin,ethitrust_webhook"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       # Mount script to BOTH locations for comprehensive coverage
       - ./scripts/create_databases.sh:/docker-entrypoint-initdb.d/01-create-databases.sh
-      - ./scripts/create_databases.sh:/docker-entrypoint-startup.d/01-create-databases.sh
     ports:
       - "5432:5432"
     healthcheck:

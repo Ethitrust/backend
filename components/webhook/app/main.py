@@ -16,8 +16,6 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Create tables on startup (migrations handle production)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
 
     # Start outgoing webhook consumer in background
     from app.messaging import start_consumer

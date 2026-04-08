@@ -289,40 +289,32 @@ class EscrowService:
                 data.receiver_id = uuid.UUID(receiver_user["user_id"])
                 data.receiver_email = receiver_user["email"]
 
-        if data.receiver_id is None:
             return
 
-        try:
-            receiver_is_org = await grpc_clients.check_organization_exists(
-                str(data.receiver_id)
-            )
-        except RuntimeError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Unable to verify receiver identity type",
-            ) from exc
+        if data.receiver_id is not None:
+            try:
+                receiver_profile = await grpc_clients.get_user_by_id(
+                    str(data.receiver_id)
+                )
+            except RuntimeError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Unable to verify receiver profile",
+                ) from exc
 
-        if receiver_is_org:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Organization cannot be the escrow receiver",
-            )
+            if receiver_profile is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="receiver_id does not correspond to a valid user",
+                )
 
-        try:
-            receiver_profile = await grpc_clients.get_user_by_id(str(data.receiver_id))
-        except RuntimeError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Unable to verify receiver profile",
-            ) from exc
+            data.receiver_email = receiver_profile["email"]
 
-        if receiver_profile is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="receiver_id does not correspond to a valid user",
-            )
+            return
 
-        data.receiver_email = receiver_profile["email"]
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid request provided"
+        )
 
     # ── Pagination helper ─────────────────────────────────────────────────────
 

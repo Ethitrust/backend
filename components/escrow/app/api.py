@@ -16,7 +16,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import grpc_clients
 from app.db import get_db
 from app.models import (
-    ContributorJoinRequest,
     CounterOfferResponse,
     EscrowCreateRequest,
     EscrowResponse,
@@ -28,7 +27,6 @@ from app.models import (
     InvitationResendRequest,
     MilestoneResponse,
     PaginatedEscrowResponse,
-    RecurringContributorResponse,
 )
 from app.repository import EscrowRepository
 from app.service import EscrowService
@@ -100,7 +98,7 @@ async def get_current_user(
             ),
         )
 
-    user["kyc_level"] = kyc_level
+    # user["kyc_level"] = kyc_level
     user["email"] = profile.get("email")
     return user
 
