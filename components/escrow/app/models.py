@@ -36,7 +36,7 @@ class BaseEscrowCreate(BaseModel):
     inspection_period: int = Field(DEFAULT_INSPECTION_PERIOD_HOURS, ge=1)
     delivery_date: Optional[datetime] = None
     dispute_window: int = Field(DEFAULT_DISPUTE_WINDOW_HOURS, ge=1)
-    how_dispute_handled: Literal["platform", "arbitrator", "mutual"] = "platform"
+    how_dispute_handled: Literal["platform"] = "platform"  # , "arbitrator", "mutual"
     who_pays_fees: Literal["buyer", "seller", "split"] = "buyer"
     provider: str = Field("chapa", min_length=2, max_length=50)
     is_test: bool = False

@@ -21,9 +21,6 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):  # noqa: ANN001
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
     consumer_task = asyncio.create_task(start_consumer())
     grpc_task = asyncio.create_task(grpc_serve())
     logger.info("User service is starting up")

@@ -19,8 +19,6 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):  # noqa: ANN001
-    logger.info("KYC service starting up")
-    await init_db()
     await init_fayda_client()
     yield
     await close_fayda_client()
