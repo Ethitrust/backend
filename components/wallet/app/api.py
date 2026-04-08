@@ -148,7 +148,7 @@ async def fund_wallet(
 
     checkout = await create_checkout(
         amount=body.amount,
-        currency=body.currency.upper(),
+        currency=wallet.currency,
         metadata={"wallet_id": str(wallet_id), "user_id": user["user_id"]},
         provider=body.provider,
     )

@@ -44,7 +44,6 @@ class CreateWalletRequest(BaseModel):
 # TODO: providers should not be hardcoded, we should have a separate service for handling the payment providers and their configurations. This will help us keep the payment provider data separate from the wallet data and also make it easier to manage and query the payment provider data in the future. We can have a separate database for storing the payment provider data and a separate API for managing the payment provider data.
 class FundRequest(BaseModel):
     amount: int = Field(..., gt=0)
-    currency: Literal["ETB"] = Field(..., max_length=10)
     provider: str = "chapa"
 
 

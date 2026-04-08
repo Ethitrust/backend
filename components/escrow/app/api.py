@@ -155,6 +155,7 @@ async def build_escrow_response(
     include_counter_history: bool = False,
 ) -> EscrowResponse:
     response = EscrowResponse.model_validate(escrow)
+    response.status_message = svc.get_status_message(escrow)
     if not include_counter_history:
         return response
 
