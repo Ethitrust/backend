@@ -16,7 +16,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import grpc_clients
 from app.db import get_db
 from app.models import (
-    ContributorJoinRequest,
     CounterOfferResponse,
     EscrowCreateRequest,
     EscrowResponse,
@@ -28,7 +27,6 @@ from app.models import (
     InvitationResendRequest,
     MilestoneResponse,
     PaginatedEscrowResponse,
-    RecurringContributorResponse,
 )
 from app.repository import EscrowRepository
 from app.service import EscrowService
@@ -88,17 +86,17 @@ async def get_current_user(
         ) from exc
 
     logger.info(f"User profile retrieved: {profile}")
-    kyc_level = int(profile.get("kyc_level", 0))
-    if kyc_level < KYC_MIN_LEVEL:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=(
-                "KYC verification is required before accessing this resource. "
-                "Please complete KYC first."
-            ),
-        )
+    # kyc_level = int(profile.get("kyc_level", 0))
+    # if not IS_DEVELOPMENT and kyc_level < KYC_MIN_LEVEL:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_403_FORBIDDEN,
+    #         detail=(
+    #             "KYC verification is required before accessing this resource. "
+    #             "Please complete KYC first."
+    #         ),
+    #     )
 
-    user["kyc_level"] = kyc_level
+    # user["kyc_level"] = kyc_level
     user["email"] = profile.get("email")
     return user
 
