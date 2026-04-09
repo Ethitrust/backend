@@ -112,6 +112,27 @@ class WalletRepository:
         await self.db.refresh(tx)
         return tx
 
+    async def get_transaction_by_reference(
+        self, reference: str
+    ) -> Optional[Transaction]:
+        result = await self.db.execute(
+            select(Transaction).where(Transaction.reference == reference)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_transaction_by_wallet_reference(
+        self,
+        wallet_id: uuid.UUID,
+        reference: str,
+    ) -> Optional[Transaction]:
+        result = await self.db.execute(
+            select(Transaction).where(
+                Transaction.wallet_id == wallet_id,
+                Transaction.reference == reference,
+            )
+        )
+        return result.scalar_one_or_none()
+
     async def get_transactions(
         self, wallet_id: uuid.UUID, offset: int, limit: int
     ) -> tuple[list[Transaction], int]:

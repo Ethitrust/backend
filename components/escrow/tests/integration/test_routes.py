@@ -8,6 +8,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock
 
 import pytest
+from app import api as escrow_api
 
 AUTH_HEADER = {"Authorization": "Bearer test-token"}
 RECEIVER_HEADER = {"Authorization": "Bearer receiver-token"}
@@ -39,6 +40,72 @@ async def test_create_onetime_escrow(client):
     assert data["escrow"]["status"] == "invited"
     assert data["escrow"]["currency"] == "ETB"
     assert data["escrow"]["amount"] == 500_000
+
+
+@pytest.mark.asyncio
+async def test_create_onetime_escrow_rejects_low_kyc_outside_development(
+    client,
+    monkeypatch,
+):
+    monkeypatch.setattr(escrow_api, "IS_DEVELOPMENT", False)
+    monkeypatch.setattr(escrow_api, "KYC_MIN_LEVEL", 1)
+    monkeypatch.setattr(
+        "app.grpc_clients.get_user_by_id",
+        AsyncMock(
+            return_value={
+                "user_id": "11111111-1111-4111-8111-11111111111a",
+                "email": "initiator@example.com",
+                "role": "user",
+                "is_verified": True,
+                "is_banned": False,
+                "kyc_level": 0,
+            }
+        ),
+    )
+
+    payload = {
+        "escrow_type": "onetime",
+        "title": "Blocked by KYC",
+        "currency": "ETB",
+        "amount": 500_000,
+        "initiator_role": "buyer",
+        "receiver_id": "22222222-2222-4222-8222-22222222222b",
+    }
+    response = await client.post("/escrow", json=payload, headers=AUTH_HEADER)
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_create_onetime_escrow_allows_low_kyc_in_development(
+    client,
+    monkeypatch,
+):
+    monkeypatch.setattr(escrow_api, "IS_DEVELOPMENT", True)
+    monkeypatch.setattr(escrow_api, "KYC_MIN_LEVEL", 1)
+    monkeypatch.setattr(
+        "app.grpc_clients.get_user_by_id",
+        AsyncMock(
+            return_value={
+                "user_id": "11111111-1111-4111-8111-11111111111a",
+                "email": "initiator@example.com",
+                "role": "user",
+                "is_verified": True,
+                "is_banned": False,
+                "kyc_level": 0,
+            }
+        ),
+    )
+
+    payload = {
+        "escrow_type": "onetime",
+        "title": "Allowed in dev",
+        "currency": "ETB",
+        "amount": 500_000,
+        "initiator_role": "buyer",
+        "receiver_id": "22222222-2222-4222-8222-22222222222b",
+    }
+    response = await client.post("/escrow", json=payload, headers=AUTH_HEADER)
+    assert response.status_code == 201, response.text
 
 
 # ─── POST /escrow (milestone) ──────────────────────────────────────────────────

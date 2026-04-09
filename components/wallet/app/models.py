@@ -45,6 +45,7 @@ class CreateWalletRequest(BaseModel):
 class FundRequest(BaseModel):
     amount: int = Field(..., gt=0)
     provider: str = "chapa"
+    return_url: str = Field(..., max_length=200)
 
 
 class PaginatedTransactions(BaseModel):

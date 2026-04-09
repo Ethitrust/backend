@@ -73,13 +73,19 @@ class TestFundWallet:
 
         response = await client.post(
             f"/wallet/{wallet_id}/fund",
-            json={"amount": 50000, "currency": "ETB", "provider": "chapa"},
+            json={
+                "amount": 50000,
+                "provider": "chapa",
+                "return_url": "https://example.com/return",
+            },
             headers=AUTH_HEADER,
         )
         assert response.status_code == 202
         data = response.json()
         assert "payment_url" in data
         assert "transaction_ref" in data
+        assert data["transaction_ref"].startswith("wallet-deposit-")
+        assert data["provider_transaction_ref"] == "tx_123"
         assert data["wallet_id"] == wallet_id
 
     @pytest.mark.asyncio
@@ -88,10 +94,38 @@ class TestFundWallet:
 
         response = await client.post(
             f"/wallet/{wallet_id}/fund",
-            json={"amount": 0, "currency": "ETB"},
+            json={"amount": 0, "provider": "chapa", "return_url": "https://x.y"},
             headers=AUTH_HEADER,
         )
         assert response.status_code == 422  # Pydantic validation error
+
+    @pytest.mark.asyncio
+    async def test_reconcile_fund_transaction_marks_pending_as_success(
+        self, client, db
+    ):
+        wallet_id = await _create_wallet(db)
+
+        fund_response = await client.post(
+            f"/wallet/{wallet_id}/fund",
+            json={
+                "amount": 50000,
+                "provider": "chapa",
+                "return_url": "https://example.com/return",
+            },
+            headers=AUTH_HEADER,
+        )
+        assert fund_response.status_code == 202
+        transaction_ref = fund_response.json()["transaction_ref"]
+
+        reconcile_response = await client.post(
+            f"/wallet/{wallet_id}/fund/{transaction_ref}/reconcile",
+            headers=AUTH_HEADER,
+        )
+        assert reconcile_response.status_code == 200
+        data = reconcile_response.json()
+        assert data["transaction_ref"] == transaction_ref
+        assert data["verified"] is True
+        assert data["status"] == "success"
 
 
 class TestTransactions:

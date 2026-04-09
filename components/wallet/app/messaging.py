@@ -69,7 +69,9 @@ async def _handle_payment_completed(body: dict) -> None:
         repo = WalletRepository(session)
         svc = WalletService(repo)
         try:
-            tx = await svc.fund_wallet(wallet_id, amount, reference, currency)
+            tx = await svc.apply_payment_completed(
+                wallet_id, amount, reference, currency
+            )
             await session.commit()
             logger.info(
                 "Wallet %s funded: amount=%s ref=%s tx=%s",

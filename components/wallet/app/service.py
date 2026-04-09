@@ -8,6 +8,7 @@ from typing import Optional
 
 from fastapi import HTTPException
 
+from app import grpc_clients
 from app.db import Transaction, Wallet, WalletLock
 from app.repository import WalletRepository
 
@@ -86,6 +87,10 @@ class WalletService:
     def _tx_type_for_capture(reason: str) -> str:
         return "escrow_release" if reason == "ESCROW" else "capture"
 
+    @staticmethod
+    def _new_deposit_reference() -> str:
+        return f"wallet-deposit-{uuid.uuid4().hex}"
+
     async def fund_wallet(
         self,
         wallet_id: uuid.UUID,
@@ -110,6 +115,185 @@ class WalletService:
             description="Wallet funded via payment provider",
         )
         return await self.repo.save_transaction(tx)
+
+    async def create_funding_intent(
+        self,
+        wallet_id: uuid.UUID,
+        amount: int,
+        reference: str,
+        currency: str,
+    ) -> Transaction:
+        """Create (or return) a pending funding transaction for reconciliation."""
+        wallet = await self.repo.get_by_id(wallet_id)
+        if not wallet:
+            raise HTTPException(404, "Wallet not found")
+
+        existing_tx = await self.repo.get_transaction_by_reference(reference)
+        if existing_tx is not None:
+            return existing_tx
+
+        tx = Transaction(
+            wallet_id=wallet_id,
+            type="deposit",
+            amount=amount,
+            currency=currency,
+            status="pending",
+            reference=reference,
+            description="Wallet funding initiated",
+        )
+        return await self.repo.save_transaction(tx)
+
+    async def initiate_deposit_transaction(
+        self,
+        wallet_id: uuid.UUID,
+        amount: int,
+        currency: str,
+    ) -> Transaction:
+        """Create a wallet-owned pending deposit transaction with internal reference."""
+        if amount <= 0:
+            raise HTTPException(400, "INVALID_AMOUNT")
+
+        internal_reference = self._new_deposit_reference()
+        return await self.create_funding_intent(
+            wallet_id=wallet_id,
+            amount=amount,
+            reference=internal_reference,
+            currency=currency,
+        )
+
+    async def initiate_deposit_checkout(
+        self,
+        wallet_id: uuid.UUID,
+        user_id: uuid.UUID,
+        amount: int,
+        provider: str,
+        return_url: str,
+    ) -> dict:
+        """Create internal deposit tx and initialize provider checkout session."""
+        wallet = await self.get_balance(wallet_id)
+        if wallet.owner_id != user_id:
+            raise HTTPException(403, "Access denied")
+
+        initiated_tx = await self.initiate_deposit_transaction(
+            wallet_id=wallet_id,
+            amount=amount,
+            currency=wallet.currency,
+        )
+
+        try:
+            checkout = await grpc_clients.create_checkout(
+                amount=amount,
+                currency=wallet.currency,
+                metadata={
+                    "wallet_id": str(wallet_id),
+                    "user_id": str(user_id),
+                    "tx_ref": initiated_tx.reference,
+                },
+                provider=provider,
+                return_url=return_url,
+            )
+        except RuntimeError as exc:
+            raise HTTPException(503, "Unable to initialize payment checkout") from exc
+
+        return {
+            "payment_url": checkout["payment_url"],
+            "transaction_ref": initiated_tx.reference,
+            "provider_transaction_ref": checkout["transaction_ref"],
+            "provider": checkout["provider"],
+            "wallet_id": str(wallet_id),
+        }
+
+    async def get_deposit_transaction(
+        self,
+        wallet_id: uuid.UUID,
+        reference: str,
+    ) -> Transaction:
+        """Return a deposit transaction by wallet/reference or raise an HTTP error."""
+        tx = await self.repo.get_transaction_by_wallet_reference(wallet_id, reference)
+        if tx is None:
+            raise HTTPException(404, "TRANSACTION_NOT_FOUND")
+        if tx.type != "deposit":
+            raise HTTPException(400, "TRANSACTION_TYPE_NOT_SUPPORTED")
+        return tx
+
+    async def reconcile_deposit_transaction(
+        self,
+        wallet_id: uuid.UUID,
+        user_id: uuid.UUID,
+        transaction_ref: str,
+        provider: str,
+    ) -> dict:
+        """Verify and settle a pending deposit transaction manually."""
+        wallet = await self.get_balance(wallet_id)
+        if wallet.owner_id != user_id:
+            raise HTTPException(403, "Access denied")
+
+        tx = await self.get_deposit_transaction(wallet_id, transaction_ref)
+        if tx.status == "success":
+            return {
+                "transaction_ref": tx.reference,
+                "status": tx.status,
+                "verified": True,
+                "wallet_id": str(wallet_id),
+            }
+
+        try:
+            verified = await grpc_clients.verify_payment(
+                reference=transaction_ref,
+                provider=provider,
+            )
+        except RuntimeError as exc:
+            raise HTTPException(503, "Unable to verify payment status") from exc
+
+        if not verified:
+            return {
+                "transaction_ref": tx.reference,
+                "status": tx.status,
+                "verified": False,
+                "wallet_id": str(wallet_id),
+            }
+
+        settled_tx = await self.apply_payment_completed(
+            wallet_id=wallet_id,
+            amount=tx.amount,
+            reference=tx.reference,
+            currency=tx.currency,
+        )
+        return {
+            "transaction_ref": settled_tx.reference,
+            "status": settled_tx.status,
+            "verified": True,
+            "wallet_id": str(wallet_id),
+        }
+
+    async def apply_payment_completed(
+        self,
+        wallet_id: uuid.UUID,
+        amount: int,
+        reference: str,
+        currency: str,
+    ) -> Transaction:
+        """Mark payment as successful and credit wallet exactly once."""
+        wallet = await self.repo.get_by_id(wallet_id)
+        if not wallet:
+            raise HTTPException(404, "Wallet not found")
+
+        existing_tx = await self.repo.get_transaction_by_reference(reference)
+        if existing_tx is not None:
+            if existing_tx.status == "success":
+                return existing_tx
+
+            if existing_tx.wallet_id != wallet_id:
+                raise HTTPException(409, "REFERENCE_WALLET_MISMATCH")
+
+            await self.repo.update_balance(
+                wallet_id, balance_delta=amount, locked_delta=0
+            )
+            existing_tx.status = "success"
+            existing_tx.description = "Wallet funded via payment provider"
+            return await self.repo.save_transaction(existing_tx)
+
+        return await self.fund_wallet(wallet_id, amount, reference, currency)
 
     async def deduct_balance(
         self,

@@ -81,9 +81,7 @@ class ChapaInitRequest(BaseModel):
 
     callback_url: Optional[str] = None
     return_url: Optional[str] = None
-
     customization: Optional[Customization] = None
-    subaccounts: Optional[List[Subaccount]] = None
     meta: Optional[Meta] = None
 
 
@@ -125,17 +123,25 @@ class ChapaProvider(BasePaymentProvider):
     def __init__(self) -> None:
         self.secret_key = os.getenv("CHAPA_SECRET_KEY", "")
 
+    def _require_secret_key(self) -> str:
+        secret_key = self.secret_key.strip()
+        if not secret_key:
+            raise HTTPException(
+                status_code=503,
+                detail="Payment provider configuration error: CHAPA_SECRET_KEY is missing",
+            )
+        return secret_key
+
     def _headers(self) -> dict[str, str]:
+        secret_key = self._require_secret_key()
         return {
-            "Authorization": f"Bearer {self.secret_key}",
+            "Authorization": f"Bearer {secret_key}",
             "Content-Type": "application/json",
         }
 
     async def create_checkout(self, request: ChapaInitRequest) -> CheckoutResult:
-        ref = str(uuid.uuid4()).replace("-", "")
-
         try:
-            request = ChapaInitRequest(**request)
+            request = ChapaInitRequest.model_validate(request)
         except ValidationError as e:
             raise ValueError(f"Invalid request: {e}")
 
@@ -152,13 +158,14 @@ class ChapaProvider(BasePaymentProvider):
 
             return CheckoutResult(
                 payment_url=data.checkout_url,
-                transaction_ref=ref,
+                transaction_ref=request.tx_ref,
                 provider="chapa",
             )
 
     async def verify_payment(self, reference: str) -> bool:
+        secret_key = self._require_secret_key()
         async with httpx.AsyncClient() as client:
-            headers = {"Authorization": f"Bearer {self.secret_key}"}
+            headers = {"Authorization": f"Bearer {secret_key}"}
             # <tx_ref> is the tx_ref that was set by you when initiating a payment.
             r = await client.get(
                 f"{self.BASE_URL}/v1/transaction/verify/{reference}",

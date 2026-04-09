@@ -6,14 +6,14 @@ import aio_pika
 
 logger = logging.getLogger(__name__)
 
-AMQP_URL = os.getenv("AMQP_URL", "amqp://guest:guest@rabbitmq/")
-EXCHANGE_NAME = "ethitrust.events"
+RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost/")
+EXCHANGE_NAME = "ethitrust"
 
 
 async def publish(routing_key: str, payload: dict) -> None:
     """Publish a message to the topic exchange."""
     try:
-        conn = await aio_pika.connect_robust(AMQP_URL)
+        conn = await aio_pika.connect_robust(RABBITMQ_URL)
         async with conn:
             channel = await conn.channel()
             exchange = await channel.declare_exchange(
@@ -33,7 +33,7 @@ async def publish(routing_key: str, payload: dict) -> None:
 
 async def start_consumer() -> None:
     """Listen for webhook.outgoing events to deliver to org endpoints."""
-    conn = await aio_pika.connect_robust(AMQP_URL)
+    conn = await aio_pika.connect_robust(RABBITMQ_URL)
     channel = await conn.channel()
     await channel.set_qos(prefetch_count=5)
     exchange = await channel.declare_exchange(

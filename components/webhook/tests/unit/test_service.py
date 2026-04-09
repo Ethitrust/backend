@@ -28,10 +28,9 @@ async def test_invalid_chapa_signature_raises_400():
     svc = WebhookService(repo=repo)
 
     payload = json.dumps({"event": "charge.success", "data": {}}).encode()
-    bad_sig = "deadsignature"
 
     with pytest.raises(HTTPException) as exc_info:
-        await svc.handle_chapa_event(payload, bad_sig)
+        await svc.handle_chapa_event(payload)
 
     assert exc_info.value.status_code == 400
 
@@ -43,7 +42,6 @@ async def test_valid_chapa_charge_success_publishes_payment_completed():
     repo = _make_repo()
     svc = WebhookService(repo=repo)
 
-    secret = os.getenv("CHAPA_WEBHOOK_SECRET", "testsecret")
     body = {
         "event": "charge.success",
         "data": {
@@ -53,10 +51,9 @@ async def test_valid_chapa_charge_success_publishes_payment_completed():
         },
     }
     payload = json.dumps(body).encode()
-    sig = hmac.new(secret.encode(), payload, hashlib.sha512).hexdigest()
 
     with patch("app.messaging.publish", new_callable=AsyncMock) as mock_publish:
-        result = await svc.handle_chapa_event(payload, sig)
+        result = await svc.handle_chapa_event(payload)
 
     assert result == {"status": "processed"}
     mock_publish.assert_awaited_once()

@@ -36,6 +36,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/escrow", tags=["escrow"])
 
+ENVIRONMENT = os.getenv("ENVIRONMENT", "production").strip().lower()
+IS_DEVELOPMENT = ENVIRONMENT == "development"
 KYC_MIN_LEVEL = int(os.getenv("KYC_MIN_LEVEL", "1"))
 
 
@@ -86,15 +88,15 @@ async def get_current_user(
         ) from exc
 
     logger.info(f"User profile retrieved: {profile}")
-    # kyc_level = int(profile.get("kyc_level", 0))
-    # if not IS_DEVELOPMENT and kyc_level < KYC_MIN_LEVEL:
-    #     raise HTTPException(
-    #         status_code=status.HTTP_403_FORBIDDEN,
-    #         detail=(
-    #             "KYC verification is required before accessing this resource. "
-    #             "Please complete KYC first."
-    #         ),
-    #     )
+    kyc_level = int(profile.get("kyc_level", 0))
+    if not IS_DEVELOPMENT and kyc_level < KYC_MIN_LEVEL:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "KYC verification is required before accessing this resource. "
+                "Please complete KYC first."
+            ),
+        )
 
     # user["kyc_level"] = kyc_level
     user["email"] = profile.get("email")

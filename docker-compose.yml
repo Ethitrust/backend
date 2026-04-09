@@ -8,6 +8,7 @@ x-common-env: &common-env
   SMTP_PASS: ${SMTP_PASS:-}
   FROM_EMAIL: ${FROM_EMAIL:-noreply@ethitrust.com}
   FRONTEND_URL: ${FRONTEND_URL:-https://ethitrust.me}
+  ENVIRONMENT: ${ENVIRONMENT:-development}
 
 services:
   # ─── Infrastructure ───────────────────────────────────────
@@ -120,6 +121,7 @@ services:
     environment:
       <<: *common-env
       DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres/ethitrust_wallet"
+      PAYMENT_GRPC: "payment-provider-service:50051"
     depends_on:
       postgres:
         condition: service_healthy
@@ -131,7 +133,9 @@ services:
     restart: unless-stopped
     environment:
       <<: *common-env
+      ENVIRONMENT: ${ENVIRONMENT:-development}
       DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres/ethitrust_escrow"
+      PAYMENT_GRPC: "payment-provider-service:50051"
       PLATFORM_FEE_PERCENT: "1.5"
       MIN_FEE_AMOUNT: "100"
       MAX_FEE_AMOUNT: "500000"
@@ -296,6 +300,9 @@ services:
     restart: unless-stopped
     environment:
       <<: *common-env
+      CHAPA_SECRET_KEY: ${CHAPA_SECRET_KEY:-}
+      CHAPA_WEBHOOK_SECRET_HASH: ${CHAPA_WEBHOOK_SECRET_HASH:-}
+      CHAPA_CALLBACK_URL: ${CHAPA_CALLBACK_URL:-https://bkln6fgd4ucc.share.zrok.io/webhook/chapa}
 
   webhook-service:
     build: ./components/webhook
@@ -305,6 +312,7 @@ services:
       DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres/ethitrust_core"
       CHAPA_WEBHOOK_SECRET_HASH: ${CHAPA_WEBHOOK_SECRET_HASH:-}
       CHAPA_SECRET_KEY: ${CHAPA_SECRET_KEY:-}
+      CHAPA_CALLBACK_URL: ${CHAPA_CALLBACK_URL:-https://bkln6fgd4ucc.share.zrok.io/webhook/chapa}
     depends_on:
       postgres:
         condition: service_healthy

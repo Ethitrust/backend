@@ -1,3 +1,4 @@
+import os
 import uuid
 from typing import Optional
 
@@ -50,3 +51,8 @@ class WebhookRepository:
             .limit(limit)
         )
         return list(result.scalars().all())
+
+    def chapa_secret(self) -> str:
+        secret = os.getenv("CHAPA_WEBHOOK_SECRET_HASH", "")
+
+        return secret
