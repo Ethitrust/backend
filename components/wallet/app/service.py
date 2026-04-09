@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import uuid
 from typing import Optional
@@ -12,8 +13,12 @@ from app import grpc_clients
 from app.db import Transaction, Wallet, WalletLock
 from app.repository import WalletRepository
 
+logger = logging.getLogger(__name__)
+
 
 class WalletService:
+    SUPPORTED_EXTERNAL_PROVIDERS = {"chapa", "manual"}
+
     def __init__(self, repo: WalletRepository) -> None:
         self.repo = repo
 
@@ -91,14 +96,49 @@ class WalletService:
     def _new_deposit_reference() -> str:
         return f"wallet-deposit-{uuid.uuid4().hex}"
 
+    @classmethod
+    def _normalize_provider(cls, provider: str) -> str:
+        normalized = provider.strip().lower()
+        if normalized not in cls.SUPPORTED_EXTERNAL_PROVIDERS:
+            raise HTTPException(400, "INVALID_PROVIDER")
+        return normalized
+
+    async def _emit_deposit_success_event(
+        self,
+        wallet: Wallet,
+        tx: Transaction,
+    ) -> None:
+        """Publish a best-effort event after successful wallet deposit settlement."""
+        payload = {
+            "wallet_id": str(wallet.id),
+            "user_id": str(wallet.owner_id),
+            "reference": tx.reference,
+            "amount": tx.amount,
+            "currency": tx.currency,
+            "provider": tx.provider,
+            "status": tx.status,
+        }
+
+        try:
+            from app import messaging  # noqa: PLC0415
+
+            await messaging.publish("wallet.deposit.success", payload)
+        except Exception:
+            logger.exception(
+                "Failed to publish wallet.deposit.success for tx_ref=%s", tx.reference
+            )
+
     async def fund_wallet(
         self,
         wallet_id: uuid.UUID,
         amount: int,
         reference: str,
         currency: str,
+        provider: str,
     ) -> Transaction:
         """Credit *amount* to the wallet balance after a confirmed deposit."""
+        provider_value = self._normalize_provider(provider)
+
         wallet = await self.repo.get_by_id(wallet_id)
         if not wallet:
             raise HTTPException(404, "Wallet not found")
@@ -113,8 +153,11 @@ class WalletService:
             status="success",
             reference=reference,
             description="Wallet funded via payment provider",
+            provider=provider_value,
         )
-        return await self.repo.save_transaction(tx)
+        saved_tx = await self.repo.save_transaction(tx)
+        await self._emit_deposit_success_event(wallet, saved_tx)
+        return saved_tx
 
     async def create_funding_intent(
         self,
@@ -122,8 +165,11 @@ class WalletService:
         amount: int,
         reference: str,
         currency: str,
+        provider: str,
     ) -> Transaction:
         """Create (or return) a pending funding transaction for reconciliation."""
+        provider_value = self._normalize_provider(provider)
+
         wallet = await self.repo.get_by_id(wallet_id)
         if not wallet:
             raise HTTPException(404, "Wallet not found")
@@ -140,16 +186,16 @@ class WalletService:
             status="pending",
             reference=reference,
             description="Wallet funding initiated",
+            provider=provider_value,
         )
         return await self.repo.save_transaction(tx)
 
     async def initiate_deposit_transaction(
-        self,
-        wallet_id: uuid.UUID,
-        amount: int,
-        currency: str,
+        self, wallet_id: uuid.UUID, amount: int, currency: str, provider: str
     ) -> Transaction:
         """Create a wallet-owned pending deposit transaction with internal reference."""
+        provider_value = self._normalize_provider(provider)
+
         if amount <= 0:
             raise HTTPException(400, "INVALID_AMOUNT")
 
@@ -159,6 +205,7 @@ class WalletService:
             amount=amount,
             reference=internal_reference,
             currency=currency,
+            provider=provider_value,
         )
 
     async def initiate_deposit_checkout(
@@ -178,6 +225,7 @@ class WalletService:
             wallet_id=wallet_id,
             amount=amount,
             currency=wallet.currency,
+            provider=provider,
         )
 
         try:
@@ -258,6 +306,54 @@ class WalletService:
             amount=tx.amount,
             reference=tx.reference,
             currency=tx.currency,
+            provider=provider,
+        )
+        return {
+            "transaction_ref": settled_tx.reference,
+            "status": settled_tx.status,
+            "verified": True,
+            "wallet_id": str(wallet_id),
+        }
+
+    async def reconcile_deposit_webhook_transaction(
+        self,
+        wallet_id: uuid.UUID,
+        transaction_ref: str,
+        provider: str,
+    ) -> dict:
+        """Verify and settle a pending deposit transaction manually."""
+
+        tx = await self.get_deposit_transaction(wallet_id, transaction_ref)
+        if tx.status == "success":
+            return {
+                "transaction_ref": tx.reference,
+                "status": tx.status,
+                "verified": True,
+                "wallet_id": str(wallet_id),
+            }
+
+        try:
+            verified = await grpc_clients.verify_payment(
+                reference=transaction_ref,
+                provider=provider,
+            )
+        except RuntimeError as exc:
+            raise HTTPException(503, "Unable to verify payment status") from exc
+
+        if not verified:
+            return {
+                "transaction_ref": tx.reference,
+                "status": tx.status,
+                "verified": False,
+                "wallet_id": str(wallet_id),
+            }
+
+        settled_tx = await self.apply_payment_completed(
+            wallet_id=wallet_id,
+            amount=tx.amount,
+            reference=tx.reference,
+            currency=tx.currency,
+            provider=provider,
         )
         return {
             "transaction_ref": settled_tx.reference,
@@ -272,8 +368,11 @@ class WalletService:
         amount: int,
         reference: str,
         currency: str,
+        provider: str,
     ) -> Transaction:
         """Mark payment as successful and credit wallet exactly once."""
+        provider_value = self._normalize_provider(provider)
+
         wallet = await self.repo.get_by_id(wallet_id)
         if not wallet:
             raise HTTPException(404, "Wallet not found")
@@ -286,22 +385,34 @@ class WalletService:
             if existing_tx.wallet_id != wallet_id:
                 raise HTTPException(409, "REFERENCE_WALLET_MISMATCH")
 
+            initiated_provider = str(existing_tx.provider or "").strip().lower()
+            if initiated_provider and initiated_provider != provider_value:
+                raise HTTPException(409, "TRANSACTION_PROVIDER_MISMATCH")
+
             await self.repo.update_balance(
                 wallet_id, balance_delta=amount, locked_delta=0
             )
             existing_tx.status = "success"
             existing_tx.description = "Wallet funded via payment provider"
-            return await self.repo.save_transaction(existing_tx)
+            existing_tx.provider = provider_value
+            saved_tx = await self.repo.save_transaction(existing_tx)
+            await self._emit_deposit_success_event(wallet, saved_tx)
+            return saved_tx
 
-        return await self.fund_wallet(wallet_id, amount, reference, currency)
+        return await self.fund_wallet(
+            wallet_id,
+            amount,
+            reference,
+            currency,
+            provider_value,
+        )
 
     async def deduct_balance(
-        self,
-        wallet_id: uuid.UUID,
-        amount: int,
-        reference: str,
+        self, wallet_id: uuid.UUID, amount: int, reference: str, provider: str
     ) -> Wallet:
         """Debit *amount* from available balance for payout-style operations."""
+        provider_value = self._normalize_provider(provider)
+
         if amount <= 0:
             raise HTTPException(400, "INVALID_AMOUNT")
 
@@ -323,6 +434,7 @@ class WalletService:
             status="success",
             reference=reference,
             description="Wallet debited via DeductBalance",
+            provider=provider_value,
         )
         await self.repo.save_transaction(tx)
         return updated_wallet
@@ -384,6 +496,7 @@ class WalletService:
                 f"Funds locked for {source_type_value}:{source_id_value} "
                 f"({reason_value})"
             ),
+            provider="internal",
         )
         return await self.repo.save_transaction(tx)
 
@@ -436,6 +549,7 @@ class WalletService:
                 f"Locked funds released for {source_type_value}:{source_id_value} "
                 f"({reason_value})"
             ),
+            provider="internal",
         )
         return await self.repo.save_transaction(tx)
 
@@ -501,6 +615,7 @@ class WalletService:
                 f"Locked funds captured for {source_type_value}:{source_id_value} "
                 f"({reason_value}) to wallet {to_wallet_id}"
             ),
+            provider="internal",
         )
         return await self.repo.save_transaction(tx)
 

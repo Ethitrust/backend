@@ -162,7 +162,11 @@ class WalletServicer(wallet_pb2_grpc.WalletServiceServicer):
         try:
             async with AsyncSessionLocal() as session:
                 tx = await _svc(session).fund_wallet(
-                    wallet_id, request.amount, request.reference, request.currency
+                    wallet_id,
+                    request.amount,
+                    request.reference,
+                    request.currency,
+                    request.provider,
                 )
                 await session.commit()
             return wallet_pb2.FundsResponse(success=True, message=str(tx.id))
@@ -197,7 +201,10 @@ class WalletServicer(wallet_pb2_grpc.WalletServiceServicer):
         try:
             async with AsyncSessionLocal() as session:
                 wallet = await _svc(session).deduct_balance(
-                    wallet_id, request.amount, request.reference
+                    wallet_id,
+                    request.amount,
+                    request.reference,
+                    request.provider,
                 )
                 await session.commit()
             return wallet_pb2.DeductResponse(success=True, new_balance=wallet.balance)

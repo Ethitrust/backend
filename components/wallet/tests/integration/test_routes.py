@@ -118,7 +118,7 @@ class TestFundWallet:
         transaction_ref = fund_response.json()["transaction_ref"]
 
         reconcile_response = await client.post(
-            f"/wallet/{wallet_id}/fund/{transaction_ref}/reconcile",
+            f"/wallet/{wallet_id}/fund/{transaction_ref}/reconcile?provider=chapa",
             headers=AUTH_HEADER,
         )
         assert reconcile_response.status_code == 200

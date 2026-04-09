@@ -84,7 +84,10 @@ async def get_user_by_id(user_id: str) -> dict:
 
 
 async def deduct_wallet_balance(
-    wallet_id: uuid.UUID, amount: int, reference: str
+    wallet_id: uuid.UUID,
+    amount: int,
+    reference: str,
+    provider: str,
 ) -> dict:
     """
     Call Wallet service to atomically deduct balance before payout.
@@ -96,6 +99,7 @@ async def deduct_wallet_balance(
         wallet_id=str(wallet_id),
         amount=amount,
         reference=reference,
+        provider=provider,
     )
     try:
         async with grpc.aio.insecure_channel(WALLET_GRPC) as channel:
@@ -117,6 +121,7 @@ async def credit_wallet_balance(
     amount: int,
     reference: str,
     currency: str,
+    provider: str,
 ) -> dict:
     """Credit wallet balance back (used for payout reversal/refund)."""
     request = wallet_pb2.FundRequest(
@@ -124,6 +129,7 @@ async def credit_wallet_balance(
         amount=amount,
         reference=reference,
         currency=currency,
+        provider=provider,
     )
     try:
         async with grpc.aio.insecure_channel(WALLET_GRPC) as channel:

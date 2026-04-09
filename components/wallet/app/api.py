@@ -152,7 +152,7 @@ async def fund_wallet(
 async def reconcile_fund_transaction(
     wallet_id: uuid.UUID,
     transaction_ref: str,
-    provider: str = Query(default="chapa"),
+    provider: str = Query(..., min_length=1, max_length=50),
     user: dict = Depends(get_current_user),
     service: WalletService = Depends(_get_service),
 ) -> dict:

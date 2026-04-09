@@ -1,8 +1,8 @@
-"""init tables
+"""added provider col to transaction table
 
-Revision ID: e1fe098c2afe
+Revision ID: 34e1e3d8283a
 Revises: 
-Create Date: 2026-04-08 19:27:57.210423
+Create Date: 2026-04-09 17:32:45.114730
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'e1fe098c2afe'
+revision: str = '34e1e3d8283a'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -47,6 +47,7 @@ def upgrade() -> None:
     sa.Column('reference', sa.String(length=255), nullable=False),
     sa.Column('description', sa.String(length=500), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('provider', sa.String(length=50), nullable=False),
     sa.ForeignKeyConstraint(['wallet_id'], ['wallets.id'], ),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('reference')

@@ -20,11 +20,34 @@ class WebhookService:
         self.repo = repo
 
     @staticmethod
+    def _extract_wallet_id(metadata: dict) -> str | None:
+        wallet_id = metadata.get("wallet_id")
+        if wallet_id:
+            return str(wallet_id)
+
+        invoices = metadata.get("invoices")
+        if not isinstance(invoices, list):
+            return None
+
+        for item in invoices:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("key", "")).lower() != "wallet_id":
+                continue
+            value = item.get("value")
+            if value:
+                return str(value)
+
+        return None
+
+    @staticmethod
     def _payment_completed_payload(
         reference: str,
         amount: float,
         currency: str,
         metadata: dict | None = None,
+        provider_reference: str | None = None,
+        provider: str | None = None,
     ) -> dict:
         payload = {
             "reference": reference,
@@ -32,10 +55,13 @@ class WebhookService:
             "transaction_ref": reference,
             "amount": amount,
             "currency": currency,
+            "provider": provider or "",
         }
+        if provider_reference:
+            payload["provider_reference"] = provider_reference
         if metadata:
             payload["metadata"] = metadata
-            wallet_id = metadata.get("wallet_id")
+            wallet_id = WebhookService._extract_wallet_id(metadata)
             if wallet_id:
                 payload["wallet_id"] = wallet_id
         return payload
@@ -51,7 +77,9 @@ class WebhookService:
         from app.messaging import publish
 
         if event_type == "charge.success":
-            payload_data = data.get("data") if isinstance(data.get("data"), dict) else {}
+            payload_data = (
+                data.get("data") if isinstance(data.get("data"), dict) else {}
+            )
             source = payload_data or data
 
             meta_data = {
@@ -65,10 +93,12 @@ class WebhookService:
             await publish(
                 "payment.completed",
                 self._payment_completed_payload(
-                    reference=str(source.get("reference") or source.get("tx_ref") or ""),
+                    reference=str(source.get("tx_ref")),
                     amount=float(source.get("amount", 0)),
                     currency=str(source.get("currency") or "ETB"),
                     metadata=meta_data,
+                    provider_reference=str(source.get("reference") or ""),
+                    provider="chapa",
                 ),
             )
         elif event_type == "payout.success":
@@ -118,6 +148,7 @@ class WebhookService:
                     amount=int(obj["amount"]),
                     currency=obj["currency"],
                     metadata=meta,
+                    provider="stripe",
                 ),
             )
 

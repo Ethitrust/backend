@@ -50,32 +50,47 @@ async def _handle_message(message: aio_pika.abc.AbstractIncomingMessage) -> None
 
 async def _handle_payment_completed(body: dict) -> None:
     """Credit the wallet indicated in the payment metadata."""
-    wallet_id_str = body.get("wallet_id") or body.get("metadata", {}).get("wallet_id")
-    reference = body.get("reference") or body.get("transaction_ref")
-    amount = int(body.get("amount", 0))
-    currency = body.get("currency", "ETB")
+    reference = body.get("reference")
 
-    if not wallet_id_str or not reference or amount <= 0:
-        logger.warning("payment.completed: missing required fields — body=%s", body)
-        return
-
+    amount_raw = body.get("amount", 0)
     try:
-        wallet_id = uuid.UUID(wallet_id_str)
-    except ValueError:
-        logger.error("payment.completed: invalid wallet_id=%s", wallet_id_str)
+        amount = float(amount_raw)
+    except (TypeError, ValueError):
+        amount = 0
+
+    if not reference or amount <= 0:
+        logger.warning("payment.completed: missing required fields — body=%s", body)
         return
 
     async with AsyncSessionLocal() as session:
         repo = WalletRepository(session)
         svc = WalletService(repo)
         try:
-            tx = await svc.apply_payment_completed(
-                wallet_id, amount, reference, currency
+            tx = await repo.get_transaction_by_reference(reference)
+            if tx is None:
+                logger.warning(
+                    "payment.completed: wallet_id missing and reference not found — ref=%s",
+                    reference,
+                )
+                return
+            wallet_id = tx.wallet_id
+            provider = str(body.get("provider") or tx.provider or "").strip().lower()
+            if not provider:
+                logger.warning(
+                    "payment.completed: provider missing and transaction has no provider — ref=%s",
+                    reference,
+                )
+                return
+
+            tx_reconcile = await svc.reconcile_deposit_webhook_transaction(
+                wallet_id=wallet_id,
+                transaction_ref=reference,
+                provider=provider,
             )
             await session.commit()
             logger.info(
                 "Wallet %s funded: amount=%s ref=%s tx=%s",
-                wallet_id,
+                tx_reconcile.get("wallet_id", ""),
                 amount,
                 reference,
                 tx.id,

@@ -93,7 +93,7 @@ async def create_checkout(
     currency: str,
     metadata: dict,
     return_url: str,
-    provider: str = "chapa",
+    provider: str,
 ) -> dict:
     """Call Payment Provider to create a checkout session.
 
@@ -122,7 +122,7 @@ async def create_checkout(
     }
 
 
-async def verify_payment(reference: str, provider: str = "chapa") -> bool:
+async def verify_payment(reference: str, provider: str) -> bool:
     """Call Payment Provider to verify if a payment reference is settled."""
     request = payment_provider_pb2.VerifyRequest(
         reference=reference,

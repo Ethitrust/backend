@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from app import messaging
+from app.db import Transaction
 
 
 class _DummySession:
@@ -65,8 +66,14 @@ async def test_handle_payment_completed_applies_funding_and_commits(monkeypatch)
 
     tx = MagicMock()
     tx.id = "tx-123"
+    tx.wallet_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    tx.provider = "chapa"
+    repo_instance.get_transaction_by_reference = AsyncMock(return_value=tx)
+
     service_instance = MagicMock()
-    service_instance.apply_payment_completed = AsyncMock(return_value=tx)
+    service_instance.reconcile_deposit_webhook_transaction = AsyncMock(
+        return_value={"wallet_id": str(tx.wallet_id), "status": "success"}
+    )
     monkeypatch.setattr("app.messaging.WalletService", lambda repo: service_instance)
 
     await messaging._handle_payment_completed(
@@ -75,8 +82,51 @@ async def test_handle_payment_completed_applies_funding_and_commits(monkeypatch)
             "reference": "pay_ref_123",
             "amount": 10000,
             "currency": "ETB",
+            "provider": "chapa",
         }
     )
 
-    service_instance.apply_payment_completed.assert_awaited_once()
+    service_instance.reconcile_deposit_webhook_transaction.assert_awaited_once_with(
+        wallet_id=tx.wallet_id,
+        transaction_ref="pay_ref_123",
+        provider="chapa",
+    )
+    dummy_session.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_handle_payment_completed_resolves_wallet_id_from_reference(monkeypatch):
+    dummy_session = _DummySession()
+    monkeypatch.setattr("app.messaging.AsyncSessionLocal", lambda: dummy_session)
+
+    tx = Transaction()
+    tx.wallet_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    tx.provider = "chapa"
+
+    repo_instance = MagicMock()
+    repo_instance.get_transaction_by_reference = AsyncMock(return_value=tx)
+    monkeypatch.setattr("app.messaging.WalletRepository", lambda session: repo_instance)
+
+    saved_tx = MagicMock()
+    saved_tx.id = "tx-456"
+    service_instance = MagicMock()
+    service_instance.reconcile_deposit_webhook_transaction = AsyncMock(
+        return_value={"wallet_id": str(tx.wallet_id), "status": "success"}
+    )
+    monkeypatch.setattr("app.messaging.WalletService", lambda repo: service_instance)
+
+    await messaging._handle_payment_completed(
+        {
+            "reference": "wallet-deposit-ref-123",
+            "amount": "10000.0",
+            "currency": "ETB",
+            "provider": "chapa",
+        }
+    )
+
+    service_instance.reconcile_deposit_webhook_transaction.assert_awaited_once_with(
+        wallet_id=tx.wallet_id,
+        transaction_ref="wallet-deposit-ref-123",
+        provider="chapa",
+    )
     dummy_session.commit.assert_awaited_once()
