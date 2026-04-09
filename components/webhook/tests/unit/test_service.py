@@ -45,9 +45,18 @@ async def test_valid_chapa_charge_success_publishes_payment_completed():
     body = {
         "event": "charge.success",
         "data": {
-            "reference": "ref_123",
+            "reference": "provider_ref_123",
+            "tx_ref": "wallet-deposit-ref-123",
             "amount": 100000,
             "currency": "ETB",
+            "meta": {
+                "invoices": [
+                    {
+                        "key": "wallet_id",
+                        "value": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                    }
+                ]
+            },
         },
     }
     payload = json.dumps(body).encode()
@@ -59,8 +68,10 @@ async def test_valid_chapa_charge_success_publishes_payment_completed():
     mock_publish.assert_awaited_once()
     args = mock_publish.call_args
     assert args[0][0] == "payment.completed"
-    assert args[0][1]["reference"] == "ref_123"
-    assert args[0][1]["transaction_ref"] == "ref_123"
+    assert args[0][1]["reference"] == "wallet-deposit-ref-123"
+    assert args[0][1]["transaction_ref"] == "wallet-deposit-ref-123"
+    assert args[0][1]["provider_reference"] == "provider_ref_123"
+    assert args[0][1]["wallet_id"] == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 
 
 def test_verify_signature_returns_true_for_valid():

@@ -208,6 +208,10 @@ _EVENT_TITLES = {
         "Payout Failed",
         "Your payout could not be processed. Please retry.",
     ),
+    "wallet.deposit.success": (
+        "Wallet Deposit Successful",
+        "Your wallet has been funded successfully.",
+    ),
     "invoice.paid": ("Invoice Paid", "Your invoice has been paid."),
 }
 

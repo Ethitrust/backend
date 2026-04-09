@@ -22,7 +22,10 @@ class PayoutService:
 
         # Deduct balance from wallet synchronously (gRPC)
         deduct_result = await grpc_clients.deduct_wallet_balance(
-            data.wallet_id, data.amount, reference
+            data.wallet_id,
+            data.amount,
+            reference,
+            data.provider,
         )
         # here it should be more verbose like if invalid wallet, insufficient balance, etc. but for simplicity we just check success
         # TODO: FUTURE: Implement proper error handling based on gRPC response (e.g., distinguish between insufficient balance vs. invalid wallet)
@@ -66,6 +69,11 @@ class PayoutService:
     async def process_bank_transfer(self, payout_id: uuid.UUID) -> Payout:
         """Perform the actual bank transfer (called by Celery worker or async)."""
         payout = await self.repo.get_by_id(payout_id)
+        if not payout.provider:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Payout record missing provider",
+            )
         if payout is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Payout not found"
@@ -101,6 +109,7 @@ class PayoutService:
                     amount=payout.amount,
                     reference=reversal_reference,
                     currency=payout.currency,
+                    provider=payout.provider,
                 )
                 if not reversal_result.get("success"):
                     raise RuntimeError("REVERSAL_NOT_APPLIED")

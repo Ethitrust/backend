@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0cwallet.proto\x12\x06wallet\"#\n\x0e\x42\x61lanceRequest\x12\x11\n\twallet_id\x18\x01 \x01(\t\"L\n\x0f\x42\x61lanceResponse\x12\x0f\n\x07\x62\x61lance\x18\x01 \x01(\x03\x12\x16\n\x0elocked_balance\x18\x02 \x01(\x03\x12\x10\n\x08\x63urrency\x18\x03 \x01(\t\"8\n\x12OwnerWalletRequest\x12\x10\n\x08owner_id\x18\x01 \x01(\t\x12\x10\n\x08\x63urrency\x18\x02 \x01(\t\"7\n\x13OwnerWalletResponse\x12\r\n\x05\x66ound\x18\x01 \x01(\x08\x12\x11\n\twallet_id\x18\x02 \x01(\t\"\x8f\x01\n\x0c\x46undsRequest\x12\x11\n\twallet_id\x18\x01 \x01(\t\x12\x0e\n\x06\x61mount\x18\x02 \x01(\x03\x12\x11\n\treference\x18\x03 \x01(\t\x12\x0e\n\x06reason\x18\x04 \x01(\t\x12\x13\n\x0bsource_type\x18\x05 \x01(\t\x12\x11\n\tsource_id\x18\x06 \x01(\t\x12\x11\n\tescrow_id\x18\x07 \x01(\t\"1\n\rFundsResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x0f\n\x07message\x18\x02 \x01(\t\"U\n\x0b\x46undRequest\x12\x11\n\twallet_id\x18\x01 \x01(\t\x12\x0e\n\x06\x61mount\x18\x02 \x01(\x03\x12\x11\n\treference\x18\x03 \x01(\t\x12\x10\n\x08\x63urrency\x18\x04 \x01(\t\"\xac\x01\n\x0eReleaseRequest\x12\x16\n\x0e\x66rom_wallet_id\x18\x01 \x01(\t\x12\x14\n\x0cto_wallet_id\x18\x02 \x01(\t\x12\x0e\n\x06\x61mount\x18\x03 \x01(\x03\x12\x11\n\treference\x18\x04 \x01(\t\x12\x11\n\tescrow_id\x18\x05 \x01(\t\x12\x0e\n\x06reason\x18\x06 \x01(\t\x12\x13\n\x0bsource_type\x18\x07 \x01(\t\x12\x11\n\tsource_id\x18\x08 \x01(\t\"E\n\rDeductRequest\x12\x11\n\twallet_id\x18\x01 \x01(\t\x12\x0e\n\x06\x61mount\x18\x02 \x01(\x03\x12\x11\n\treference\x18\x03 \x01(\t\"G\n\x0e\x44\x65\x64uctResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x13\n\x0bnew_balance\x18\x02 \x01(\x03\x12\x0f\n\x07message\x18\x03 \x01(\t2\xca\x03\n\rWalletService\x12=\n\nGetBalance\x12\x16.wallet.BalanceRequest\x1a\x17.wallet.BalanceResponse\x12K\n\x10GetWalletByOwner\x12\x1a.wallet.OwnerWalletRequest\x1a\x1b.wallet.OwnerWalletResponse\x12\x38\n\tLockFunds\x12\x14.wallet.FundsRequest\x1a\x15.wallet.FundsResponse\x12:\n\x0bUnlockFunds\x12\x14.wallet.FundsRequest\x1a\x15.wallet.FundsResponse\x12=\n\x0cReleaseFunds\x12\x16.wallet.ReleaseRequest\x1a\x15.wallet.FundsResponse\x12\x38\n\nFundWallet\x12\x13.wallet.FundRequest\x1a\x15.wallet.FundsResponse\x12>\n\rDeductBalance\x12\x15.wallet.DeductRequest\x1a\x16.wallet.DeductResponseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0cwallet.proto\x12\x06wallet\"#\n\x0e\x42\x61lanceRequest\x12\x11\n\twallet_id\x18\x01 \x01(\t\"L\n\x0f\x42\x61lanceResponse\x12\x0f\n\x07\x62\x61lance\x18\x01 \x01(\x03\x12\x16\n\x0elocked_balance\x18\x02 \x01(\x03\x12\x10\n\x08\x63urrency\x18\x03 \x01(\t\"8\n\x12OwnerWalletRequest\x12\x10\n\x08owner_id\x18\x01 \x01(\t\x12\x10\n\x08\x63urrency\x18\x02 \x01(\t\"7\n\x13OwnerWalletResponse\x12\r\n\x05\x66ound\x18\x01 \x01(\x08\x12\x11\n\twallet_id\x18\x02 \x01(\t\"\x8f\x01\n\x0c\x46undsRequest\x12\x11\n\twallet_id\x18\x01 \x01(\t\x12\x0e\n\x06\x61mount\x18\x02 \x01(\x03\x12\x11\n\treference\x18\x03 \x01(\t\x12\x0e\n\x06reason\x18\x04 \x01(\t\x12\x13\n\x0bsource_type\x18\x05 \x01(\t\x12\x11\n\tsource_id\x18\x06 \x01(\t\x12\x11\n\tescrow_id\x18\x07 \x01(\t\"1\n\rFundsResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x0f\n\x07message\x18\x02 \x01(\t\"g\n\x0b\x46undRequest\x12\x11\n\twallet_id\x18\x01 \x01(\t\x12\x0e\n\x06\x61mount\x18\x02 \x01(\x03\x12\x11\n\treference\x18\x03 \x01(\t\x12\x10\n\x08\x63urrency\x18\x04 \x01(\t\x12\x10\n\x08provider\x18\x05 \x01(\t\"\xac\x01\n\x0eReleaseRequest\x12\x16\n\x0e\x66rom_wallet_id\x18\x01 \x01(\t\x12\x14\n\x0cto_wallet_id\x18\x02 \x01(\t\x12\x0e\n\x06\x61mount\x18\x03 \x01(\x03\x12\x11\n\treference\x18\x04 \x01(\t\x12\x11\n\tescrow_id\x18\x05 \x01(\t\x12\x0e\n\x06reason\x18\x06 \x01(\t\x12\x13\n\x0bsource_type\x18\x07 \x01(\t\x12\x11\n\tsource_id\x18\x08 \x01(\t\"W\n\rDeductRequest\x12\x11\n\twallet_id\x18\x01 \x01(\t\x12\x0e\n\x06\x61mount\x18\x02 \x01(\x03\x12\x11\n\treference\x18\x03 \x01(\t\x12\x10\n\x08provider\x18\x04 \x01(\t\"G\n\x0e\x44\x65\x64uctResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x13\n\x0bnew_balance\x18\x02 \x01(\x03\x12\x0f\n\x07message\x18\x03 \x01(\t2\xca\x03\n\rWalletService\x12=\n\nGetBalance\x12\x16.wallet.BalanceRequest\x1a\x17.wallet.BalanceResponse\x12K\n\x10GetWalletByOwner\x12\x1a.wallet.OwnerWalletRequest\x1a\x1b.wallet.OwnerWalletResponse\x12\x38\n\tLockFunds\x12\x14.wallet.FundsRequest\x1a\x15.wallet.FundsResponse\x12:\n\x0bUnlockFunds\x12\x14.wallet.FundsRequest\x1a\x15.wallet.FundsResponse\x12=\n\x0cReleaseFunds\x12\x16.wallet.ReleaseRequest\x1a\x15.wallet.FundsResponse\x12\x38\n\nFundWallet\x12\x13.wallet.FundRequest\x1a\x15.wallet.FundsResponse\x12>\n\rDeductBalance\x12\x15.wallet.DeductRequest\x1a\x16.wallet.DeductResponseb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -44,13 +44,13 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_FUNDSRESPONSE']._serialized_start=400
   _globals['_FUNDSRESPONSE']._serialized_end=449
   _globals['_FUNDREQUEST']._serialized_start=451
-  _globals['_FUNDREQUEST']._serialized_end=536
-  _globals['_RELEASEREQUEST']._serialized_start=539
-  _globals['_RELEASEREQUEST']._serialized_end=711
-  _globals['_DEDUCTREQUEST']._serialized_start=713
-  _globals['_DEDUCTREQUEST']._serialized_end=782
-  _globals['_DEDUCTRESPONSE']._serialized_start=784
-  _globals['_DEDUCTRESPONSE']._serialized_end=855
-  _globals['_WALLETSERVICE']._serialized_start=858
-  _globals['_WALLETSERVICE']._serialized_end=1316
+  _globals['_FUNDREQUEST']._serialized_end=554
+  _globals['_RELEASEREQUEST']._serialized_start=557
+  _globals['_RELEASEREQUEST']._serialized_end=729
+  _globals['_DEDUCTREQUEST']._serialized_start=731
+  _globals['_DEDUCTREQUEST']._serialized_end=818
+  _globals['_DEDUCTRESPONSE']._serialized_start=820
+  _globals['_DEDUCTRESPONSE']._serialized_end=891
+  _globals['_WALLETSERVICE']._serialized_start=894
+  _globals['_WALLETSERVICE']._serialized_end=1352
 # @@protoc_insertion_point(module_scope)

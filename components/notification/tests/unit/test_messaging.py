@@ -118,3 +118,4 @@ def test_enrich_email_metadata_builds_invitation_url(monkeypatch):
 def test_event_titles_include_auth_email_events() -> None:
     assert "user.otp_resent" in messaging._EVENT_TITLES
     assert "user.password_reset_requested" in messaging._EVENT_TITLES
+    assert "wallet.deposit.success" in messaging._EVENT_TITLES

@@ -257,8 +257,9 @@ class TestFundWallet:
         wallet = _make_wallet(balance=0, currency="ETB")
         repo = _make_repo(wallet)
         svc = WalletService(repo)
+        svc._emit_deposit_success_event = AsyncMock()
 
-        tx = await svc.fund_wallet(wallet.id, 10000, "pay_ref_001", "ETB")
+        tx = await svc.fund_wallet(wallet.id, 10000, "pay_ref_001", "ETB", "chapa")
 
         repo.update_balance.assert_called_once_with(
             wallet.id, balance_delta=10000, locked_delta=0
@@ -268,6 +269,7 @@ class TestFundWallet:
         assert saved_tx.amount == 10000
         assert saved_tx.status == "success"
         assert saved_tx.reference == "pay_ref_001"
+        svc._emit_deposit_success_event.assert_awaited_once_with(wallet, tx)
 
     @pytest.mark.asyncio
     async def test_fund_wallet_not_found_raises_404(self):
@@ -276,7 +278,7 @@ class TestFundWallet:
         svc = WalletService(repo)
 
         with pytest.raises(HTTPException) as exc_info:
-            await svc.fund_wallet(uuid.uuid4(), 1000, "ref", "ETB")
+            await svc.fund_wallet(uuid.uuid4(), 1000, "ref", "ETB", "chapa")
         assert exc_info.value.status_code == 404
 
     @pytest.mark.asyncio
@@ -285,7 +287,13 @@ class TestFundWallet:
         repo = _make_repo(wallet)
         svc = WalletService(repo)
 
-        tx = await svc.create_funding_intent(wallet.id, 10000, "pay_ref_pending", "ETB")
+        tx = await svc.create_funding_intent(
+            wallet.id,
+            10000,
+            "pay_ref_pending",
+            "ETB",
+            "chapa",
+        )
 
         saved_tx = repo.save_transaction.call_args[0][0]
         assert saved_tx.reference == "pay_ref_pending"
@@ -299,7 +307,7 @@ class TestFundWallet:
         repo = _make_repo(wallet)
         svc = WalletService(repo)
 
-        tx = await svc.initiate_deposit_transaction(wallet.id, 10000, "ETB")
+        tx = await svc.initiate_deposit_transaction(wallet.id, 10000, "ETB", "chapa")
 
         saved_tx = repo.save_transaction.call_args[0][0]
         assert saved_tx.reference.startswith("wallet-deposit-")
@@ -346,8 +354,13 @@ class TestFundWallet:
         repo.get_transaction_by_reference = AsyncMock(return_value=pending_tx)
 
         svc = WalletService(repo)
+        svc._emit_deposit_success_event = AsyncMock()
         tx = await svc.apply_payment_completed(
-            wallet.id, 5000, "pay_ref_upgrade", "ETB"
+            wallet.id,
+            5000,
+            "pay_ref_upgrade",
+            "ETB",
+            "chapa",
         )
 
         repo.update_balance.assert_called_once_with(
@@ -355,6 +368,7 @@ class TestFundWallet:
         )
         assert tx.status == "success"
         assert tx.reference == "pay_ref_upgrade"
+        svc._emit_deposit_success_event.assert_awaited_once_with(wallet, tx)
 
     @pytest.mark.asyncio
     async def test_apply_payment_completed_is_idempotent_for_success_transaction(self):
@@ -373,10 +387,50 @@ class TestFundWallet:
         repo.get_transaction_by_reference = AsyncMock(return_value=success_tx)
 
         svc = WalletService(repo)
-        tx = await svc.apply_payment_completed(wallet.id, 5000, "pay_ref_done", "ETB")
+        svc._emit_deposit_success_event = AsyncMock()
+        tx = await svc.apply_payment_completed(
+            wallet.id,
+            5000,
+            "pay_ref_done",
+            "ETB",
+            "chapa",
+        )
 
         repo.update_balance.assert_not_called()
         assert tx.status == "success"
+        svc._emit_deposit_success_event.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_apply_payment_completed_raises_when_provider_mismatch(self):
+        wallet = _make_wallet(balance=0, currency="ETB")
+        repo = _make_repo(wallet)
+
+        pending_tx = _make_transaction(
+            wallet_id=wallet.id,
+            type="deposit",
+            amount=5000,
+            currency="ETB",
+            status="pending",
+            reference="pay_ref_provider_mismatch",
+            description="Wallet funding initiated",
+            provider="manual",
+        )
+        repo.get_transaction_by_reference = AsyncMock(return_value=pending_tx)
+
+        svc = WalletService(repo)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await svc.apply_payment_completed(
+                wallet.id,
+                5000,
+                "pay_ref_provider_mismatch",
+                "ETB",
+                "chapa",
+            )
+
+        assert exc_info.value.status_code == 409
+        assert "TRANSACTION_PROVIDER_MISMATCH" in exc_info.value.detail
+        repo.update_balance.assert_not_called()
 
 
 class TestDeductBalance:
@@ -386,7 +440,12 @@ class TestDeductBalance:
         repo = _make_repo(wallet)
         svc = WalletService(repo)
 
-        updated_wallet = await svc.deduct_balance(wallet.id, 2500, "payout_ref_001")
+        updated_wallet = await svc.deduct_balance(
+            wallet.id,
+            2500,
+            "payout_ref_001",
+            "chapa",
+        )
 
         repo.update_balance.assert_called_once_with(
             wallet.id, balance_delta=-2500, locked_delta=0
@@ -405,7 +464,7 @@ class TestDeductBalance:
         svc = WalletService(repo)
 
         with pytest.raises(HTTPException) as exc_info:
-            await svc.deduct_balance(uuid.uuid4(), 1000, "ref")
+            await svc.deduct_balance(uuid.uuid4(), 1000, "ref", "chapa")
         assert exc_info.value.status_code == 404
 
     @pytest.mark.asyncio
@@ -415,6 +474,6 @@ class TestDeductBalance:
         svc = WalletService(repo)
 
         with pytest.raises(HTTPException) as exc_info:
-            await svc.deduct_balance(wallet.id, 1000, "ref")
+            await svc.deduct_balance(wallet.id, 1000, "ref", "chapa")
         assert exc_info.value.status_code == 400
         assert "INSUFFICIENT_BALANCE" in exc_info.value.detail
