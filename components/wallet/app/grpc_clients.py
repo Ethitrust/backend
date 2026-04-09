@@ -120,3 +120,21 @@ async def create_checkout(
         "transaction_ref": response.transaction_ref,
         "provider": response.provider or provider,
     }
+
+
+async def verify_payment(reference: str, provider: str = "chapa") -> bool:
+    """Call Payment Provider to verify if a payment reference is settled."""
+    request = payment_provider_pb2.VerifyRequest(
+        reference=reference,
+        provider=provider,
+    )
+
+    try:
+        async with grpc.aio.insecure_channel(PAYMENT_GRPC) as channel:
+            stub = payment_provider_pb2_grpc.PaymentProviderServiceStub(channel)
+            response = await stub.VerifyPayment(request, timeout=10.0)
+    except grpc.aio.AioRpcError as exc:
+        details = exc.details() or "Payment provider verification failed"
+        raise RuntimeError(details) from exc
+
+    return bool(response.success)

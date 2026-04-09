@@ -53,3 +53,30 @@ async def test_handle_organization_created_ignores_invalid_org_id(monkeypatch):
     await messaging._handle_organization_created({"org_id": "not-a-uuid"})
 
     service_instance.create_wallet.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_handle_payment_completed_applies_funding_and_commits(monkeypatch):
+    dummy_session = _DummySession()
+    monkeypatch.setattr("app.messaging.AsyncSessionLocal", lambda: dummy_session)
+
+    repo_instance = MagicMock()
+    monkeypatch.setattr("app.messaging.WalletRepository", lambda session: repo_instance)
+
+    tx = MagicMock()
+    tx.id = "tx-123"
+    service_instance = MagicMock()
+    service_instance.apply_payment_completed = AsyncMock(return_value=tx)
+    monkeypatch.setattr("app.messaging.WalletService", lambda repo: service_instance)
+
+    await messaging._handle_payment_completed(
+        {
+            "wallet_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "reference": "pay_ref_123",
+            "amount": 10000,
+            "currency": "ETB",
+        }
+    )
+
+    service_instance.apply_payment_completed.assert_awaited_once()
+    dummy_session.commit.assert_awaited_once()

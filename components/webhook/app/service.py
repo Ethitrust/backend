@@ -6,9 +6,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db import WebhookLog
 from app.models import OutgoingEventPayload
 from app.repository import WebhookRepository
 
@@ -24,7 +22,7 @@ class WebhookService:
     @staticmethod
     def _payment_completed_payload(
         reference: str,
-        amount: int,
+        amount: float,
         currency: str,
         metadata: dict | None = None,
     ) -> dict:
@@ -42,13 +40,8 @@ class WebhookService:
                 payload["wallet_id"] = wallet_id
         return payload
 
-    async def handle_chapa_event(self, payload: bytes, signature: str) -> dict:
+    async def handle_chapa_event(self, payload: bytes) -> dict:
         """Verify HMAC, parse event, publish internal event via RabbitMQ."""
-        secret = CHAPA_WEBHOOK_SECRET_HASH
-        computed = hmac.new(secret.encode(), payload, hashlib.sha512).hexdigest()
-        if not hmac.compare_digest(computed, signature):
-            raise HTTPException(status_code=400, detail="Invalid webhook signature")
-
         data = json.loads(payload)
         event_type = data.get("event", "unknown")
         await self.repo.save_log(
@@ -58,24 +51,34 @@ class WebhookService:
         from app.messaging import publish
 
         if event_type == "charge.success":
-            payment_data = data.get("data", {})
+            payload_data = data.get("data") if isinstance(data.get("data"), dict) else {}
+            source = payload_data or data
+
+            meta_data = {
+                "payment_method": source.get("payment_method", ""),
+                "tx_ref": source.get("tx_ref", ""),
+            }
+            meta_data = {
+                **meta_data,
+                **(source.get("meta") if isinstance(source.get("meta"), dict) else {}),
+            }
             await publish(
                 "payment.completed",
                 self._payment_completed_payload(
-                    reference=payment_data["reference"],
-                    amount=int(payment_data["amount"]),
-                    currency=payment_data["currency"],
-                    metadata=payment_data.get("meta") or payment_data.get("metadata"),
+                    reference=str(source.get("reference") or source.get("tx_ref") or ""),
+                    amount=float(source.get("amount", 0)),
+                    currency=str(source.get("currency") or "ETB"),
+                    metadata=meta_data,
                 ),
             )
-        elif event_type == "transfer.success":
-            await publish("payout.completed", {"reference": data["data"]["reference"]})
-        elif event_type == "transfer.failed":
+        elif event_type == "payout.success":
+            await publish("payout.completed", {"reference": data["reference"]})
+        elif event_type == "payout.failed/cancelled":
             await publish(
                 "payout.failed",
                 {
-                    "reference": data["data"]["reference"],
-                    "reason": data["data"].get("gateway_response", ""),
+                    "reference": data["reference"],
+                    "reason": data.get("status", ""),
                 },
             )
 

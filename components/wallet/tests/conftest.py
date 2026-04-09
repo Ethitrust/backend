@@ -77,3 +77,7 @@ def mock_grpc(monkeypatch):
             }
         ),
     )
+    monkeypatch.setattr(
+        "app.grpc_clients.verify_payment",
+        AsyncMock(return_value=True),
+    )

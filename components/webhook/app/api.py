@@ -11,7 +11,7 @@ from app.repository import WebhookRepository
 from app.service import WebhookService
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/webhook", tags=["webhook"])
+router = APIRouter(prefix="/webhooks", tags=["webhook"])
 
 
 def get_service(db: AsyncSession = Depends(get_db)) -> WebhookService:
@@ -22,13 +22,18 @@ def get_service(db: AsyncSession = Depends(get_db)) -> WebhookService:
 async def receive_chapa(
     request: Request,
     x_chapa_signature: Annotated[str | None, Header()] = None,
+    chapa_signature: Annotated[str | None, Header()] = None,
     svc: WebhookService = Depends(get_service),
 ) -> dict:
     """Receive and verify incoming Chapa webhook events."""
-    if not x_chapa_signature:
-        raise HTTPException(status_code=400, detail="Missing x-chapa-signature header")
+    signature = x_chapa_signature or chapa_signature
+    if not signature:
+        raise HTTPException(status_code=400, detail="Missing chapa header")
     payload = await request.body()
-    return await svc.handle_chapa_event(payload, x_chapa_signature)
+    is_valid = svc.verify_signature(payload, signature, secret=svc.repo.chapa_secret())
+    if not is_valid:
+        raise HTTPException(status_code=400, detail="Invalid webhook signature")
+    return await svc.handle_chapa_event(payload)
 
 
 # @router.post("/stripe", status_code=200)

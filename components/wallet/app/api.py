@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import grpc_clients
 from app.db import get_db
 from app.models import (
-    CreateWalletRequest,
     FundRequest,
     PaginatedTransactions,
     TransactionResponse,
@@ -140,25 +139,30 @@ async def fund_wallet(
     Returns a payment URL that the client should redirect the user to.
     Actual balance credit happens when the ``payment.completed`` event arrives.
     """
-    from app.grpc_clients import create_checkout
-
-    wallet = await service.get_balance(wallet_id)
-    if wallet.owner_id != uuid.UUID(user["user_id"]):
-        raise HTTPException(403, "Access denied")
-
-    checkout = await create_checkout(
+    return await service.initiate_deposit_checkout(
+        wallet_id=wallet_id,
+        user_id=uuid.UUID(user["user_id"]),
         amount=body.amount,
-        currency=wallet.currency,
-        metadata={"wallet_id": str(wallet_id), "user_id": user["user_id"]},
         provider=body.provider,
         return_url=body.return_url,
     )
-    return {
-        "payment_url": checkout["payment_url"],
-        "transaction_ref": checkout["transaction_ref"],
-        "provider": checkout["provider"],
-        "wallet_id": str(wallet_id),
-    }
+
+
+@router.post("/{wallet_id}/fund/{transaction_ref}/reconcile", response_model=dict)
+async def reconcile_fund_transaction(
+    wallet_id: uuid.UUID,
+    transaction_ref: str,
+    provider: str = Query(default="chapa"),
+    user: dict = Depends(get_current_user),
+    service: WalletService = Depends(_get_service),
+) -> dict:
+    """Manually reconcile a pending deposit in case completion event was missed."""
+    return await service.reconcile_deposit_transaction(
+        wallet_id=wallet_id,
+        user_id=uuid.UUID(user["user_id"]),
+        transaction_ref=transaction_ref,
+        provider=provider,
+    )
 
 
 @router.get("/{wallet_id}/transactions", response_model=PaginatedTransactions)
