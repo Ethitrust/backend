@@ -54,9 +54,7 @@ def _candidate_payloads(body: dict) -> list[dict]:
     return candidates
 
 
-def _extract_first_nonempty_string(
-    payloads: list[dict], keys: tuple[str, ...]
-) -> str | None:
+def _extract_first_nonempty_string(payloads: list[dict], keys: tuple[str, ...]) -> str | None:
     for payload in payloads:
         for key in keys:
             value = payload.get(key)
@@ -69,8 +67,36 @@ def _resolve_user_id(body: dict) -> str | None:
     payloads = _candidate_payloads(body)
     return _extract_first_nonempty_string(
         payloads,
-        ("user_id", "receiver_id", "recipient_id", "actor_user_id"),
+        (
+            "user_id",
+            "receiver_id",
+            "recipient_id",
+            "actor_user_id",
+            "owner_id",
+            "initiator_id",
+        ),
     )
+
+
+def _resolve_user_ids(body: dict) -> list[str]:
+    payloads = _candidate_payloads(body)
+    keys = (
+        "user_id",
+        "receiver_id",
+        "recipient_id",
+        "actor_user_id",
+        "owner_id",
+        "initiator_id",
+    )
+    collected: list[str] = []
+    for payload in payloads:
+        for key in keys:
+            value = payload.get(key)
+            if isinstance(value, str):
+                normalized = value.strip()
+                if normalized and normalized not in collected:
+                    collected.append(normalized)
+    return collected
 
 
 async def publish(routing_key: str, body: dict) -> None:
@@ -93,9 +119,7 @@ async def publish(routing_key: str, body: dict) -> None:
         logger.exception("Failed to publish %s", routing_key)
 
 
-def _dispatch_email_task(
-    *, to: str, subject: str, body: str, event: str, metadata: dict
-) -> None:
+def _dispatch_email_task(*, to: str, subject: str, body: str, event: str, metadata: dict) -> None:
     try:
         task = _CELERY_DISPATCH.send_task(
             "app.tasks.email_tasks.send_email_notification",
@@ -134,9 +158,7 @@ async def _resolve_recipient_email(body: dict, user_id_str: str | None) -> str |
     try:
         profile = await grpc_clients.get_user_by_id(resolved_user_id)
     except RuntimeError:
-        logger.exception(
-            "Failed to resolve recipient email for user_id %s", resolved_user_id
-        )
+        logger.exception("Failed to resolve recipient email for user_id %s", resolved_user_id)
         return None
 
     email = profile.get("email")
@@ -173,6 +195,10 @@ _EVENT_TITLES = {
         "Welcome to Ethitrust",
         "Your account has been created successfully.",
     ),
+    "organization.created": (
+        "Organization Created",
+        "Your organization has been created successfully.",
+    ),
     "escrow.invite_received": (
         "Escrow Invitation",
         "You have received a new escrow invitation.",
@@ -199,7 +225,23 @@ _EVENT_TITLES = {
         "Your escrow transaction has been completed.",
     ),
     "dispute.opened": ("Dispute Opened", "A dispute has been raised on your escrow."),
+    "dispute.evidence.added": (
+        "New Dispute Evidence",
+        "New evidence was added to an active dispute.",
+    ),
+    "dispute.under_review": (
+        "Dispute Under Review",
+        "A moderator is currently reviewing your dispute.",
+    ),
+    "dispute.resolution.requested": (
+        "Dispute Resolution Proposed",
+        "A dispute resolution outcome has been proposed.",
+    ),
     "dispute.resolved": ("Dispute Resolved", "Your dispute has been resolved."),
+    "dispute.cancelled": (
+        "Dispute Cancelled",
+        "The dispute has been cancelled.",
+    ),
     "payout.success": (
         "Payout Successful",
         "Your payout has been processed successfully.",
@@ -208,12 +250,72 @@ _EVENT_TITLES = {
         "Payout Failed",
         "Your payout could not be processed. Please retry.",
     ),
+    "payout.requested": (
+        "Payout Requested",
+        "Your payout request was received and is being processed.",
+    ),
     "wallet.deposit.success": (
         "Wallet Deposit Successful",
         "Your wallet has been funded successfully.",
     ),
+    "escrow.created": (
+        "Escrow Created",
+        "A new escrow has been created.",
+    ),
+    "escrow.activated": (
+        "Escrow Activated",
+        "An escrow is now active.",
+    ),
+    "escrow.cancelled": (
+        "Escrow Cancelled",
+        "An escrow has been cancelled.",
+    ),
+    "milestone.delivered": (
+        "Milestone Delivered",
+        "A milestone has been marked as delivered.",
+    ),
+    "milestone.approved": (
+        "Milestone Approved",
+        "A milestone has been approved.",
+    ),
+    "escrow.contributor_joined": (
+        "New Contributor Joined",
+        "A contributor has joined your recurring escrow cycle.",
+    ),
     "invoice.paid": ("Invoice Paid", "Your invoice has been paid."),
 }
+
+_INVITE_RESPONSE_TITLES_BY_ACTION = {
+    "accepted": (
+        "Escrow Invitation Accepted",
+        "Your counterparty accepted the escrow invitation.",
+    ),
+    "countered": (
+        "Escrow Invitation Countered",
+        "Your counterparty proposed a counter-offer for the escrow.",
+    ),
+    "rejected": (
+        "Escrow Invitation Rejected",
+        "Your counterparty rejected the escrow invitation.",
+    ),
+}
+
+
+def _resolve_event_title_and_body(event_type: str, body: dict) -> tuple[str, str]:
+    if event_type == "escrow.invite_responded":
+        action = body.get("action")
+        if isinstance(action, str):
+            action_copy = _INVITE_RESPONSE_TITLES_BY_ACTION.get(action.strip().lower())
+            if action_copy is not None:
+                return action_copy
+
+    if event_type == "dispute.opened":
+        return (
+            "Dispute Opened",
+            "Your counterparty raised a dispute on this escrow.",
+        )
+
+    return _EVENT_TITLES.get(event_type, ("Notification", "You have a new notification."))
 
 
 async def _handle_event(event_type: str, body: dict) -> None:
@@ -224,7 +326,8 @@ async def _handle_event(event_type: str, body: dict) -> None:
     from app.repository import NotificationRepository  # noqa: PLC0415
     from app.service import NotificationService  # noqa: PLC0415
 
-    user_id_str = _resolve_user_id(body)
+    resolved_user_ids = _resolve_user_ids(body)
+    user_id_str = resolved_user_ids[0] if resolved_user_ids else _resolve_user_id(body)
     recipient_email = await _resolve_recipient_email(body, user_id_str)
     logger.info(
         "notification.event.received type=%s user_id=%s recipient_email=%s body_keys=%s",
@@ -234,21 +337,20 @@ async def _handle_event(event_type: str, body: dict) -> None:
         sorted(body.keys()),
     )
 
-    title, notif_body = _EVENT_TITLES.get(
-        event_type, ("Notification", "You have a new notification.")
-    )
+    title, notif_body = _resolve_event_title_and_body(event_type, body)
 
-    if user_id_str:
+    valid_user_ids: list[uuid.UUID] = []
+    for resolved_user_id in resolved_user_ids:
         try:
-            user_id = uuid.UUID(user_id_str)
+            valid_user_ids.append(uuid.UUID(resolved_user_id))
         except (ValueError, TypeError):
-            logger.warning(
-                "Skipping in-app notification; invalid user id: %s", user_id_str
-            )
-        else:
-            async with AsyncSessionLocal() as session:
-                repo = NotificationRepository(session)
-                svc = NotificationService(repo)
+            logger.warning("Skipping in-app notification; invalid user id: %s", resolved_user_id)
+
+    if valid_user_ids:
+        async with AsyncSessionLocal() as session:
+            repo = NotificationRepository(session)
+            svc = NotificationService(repo)
+            for user_id in valid_user_ids:
                 await svc.notify(
                     NotificationCreate(
                         user_id=user_id,
@@ -258,7 +360,7 @@ async def _handle_event(event_type: str, body: dict) -> None:
                         metadata=body,
                     )
                 )
-                await session.commit()
+            await session.commit()
 
     email_metadata = _enrich_email_metadata(event_type, body)
 
@@ -309,9 +411,7 @@ async def start_consumer() -> None:
                                 )
                                 await _handle_event(message.routing_key, body)
                             except Exception:
-                                logger.exception(
-                                    "Failed to handle event %s", message.routing_key
-                                )
+                                logger.exception("Failed to handle event %s", message.routing_key)
         except Exception:
             logger.exception("Consumer error, retrying in 5s")
             await asyncio.sleep(5)

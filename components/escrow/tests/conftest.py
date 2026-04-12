@@ -38,9 +38,7 @@ async def db():
 @pytest.fixture
 async def client(db):
     app.dependency_overrides[get_db] = lambda: db
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as ac:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
     app.dependency_overrides.clear()
 
@@ -105,7 +103,6 @@ def mock_grpc(monkeypatch):
             "org_id": TEST_ORG_ID,
             "public_key": "pk_test_example",
             "status": "active",
-            "is_test": True,
         }
 
     monkeypatch.setattr(

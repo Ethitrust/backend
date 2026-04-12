@@ -9,7 +9,6 @@ AUTH_HEADER = {"Authorization": "Bearer test-token"}
 ORG_PAYLOAD = {
     "name": "Acme Corp",
     "slug": "acme-corp",
-    "is_test": True,
 }
 
 
@@ -58,9 +57,7 @@ async def test_list_orgs(client):
 
 @pytest.mark.asyncio
 async def test_get_org(client):
-    create_r = await client.post(
-        "/organizations", json=ORG_PAYLOAD, headers=AUTH_HEADER
-    )
+    create_r = await client.post("/organizations", json=ORG_PAYLOAD, headers=AUTH_HEADER)
     org_id = create_r.json()["id"]
     r = await client.get(f"/organizations/{org_id}", headers=AUTH_HEADER)
     assert r.status_code == 200
@@ -76,14 +73,10 @@ async def test_get_org(client):
 
 @pytest.mark.asyncio
 async def test_rotate_key_returns_new_secret(client):
-    create_r = await client.post(
-        "/organizations", json=ORG_PAYLOAD, headers=AUTH_HEADER
-    )
+    create_r = await client.post("/organizations", json=ORG_PAYLOAD, headers=AUTH_HEADER)
     org_id = create_r.json()["id"]
     old_sk = create_r.json()["secret_key"]
-    rotate_r = await client.post(
-        f"/organizations/{org_id}/keys/rotate", headers=AUTH_HEADER
-    )
+    rotate_r = await client.post(f"/organizations/{org_id}/keys/rotate", headers=AUTH_HEADER)
     assert rotate_r.status_code == 200
     new_sk = rotate_r.json()["secret_key"]
     assert new_sk != old_sk
@@ -91,9 +84,7 @@ async def test_rotate_key_returns_new_secret(client):
 
 @pytest.mark.asyncio
 async def test_custom_role_creation_not_supported(client):
-    create_r = await client.post(
-        "/organizations", json=ORG_PAYLOAD, headers=AUTH_HEADER
-    )
+    create_r = await client.post("/organizations", json=ORG_PAYLOAD, headers=AUTH_HEADER)
     org_id = create_r.json()["id"]
 
     role_r = await client.post(
@@ -110,9 +101,7 @@ async def test_custom_role_creation_not_supported(client):
 
 @pytest.mark.asyncio
 async def test_owner_can_update_system_role_permissions(client):
-    create_r = await client.post(
-        "/organizations", json=ORG_PAYLOAD, headers=AUTH_HEADER
-    )
+    create_r = await client.post("/organizations", json=ORG_PAYLOAD, headers=AUTH_HEADER)
     org_id = create_r.json()["id"]
 
     update_r = await client.put(
@@ -127,9 +116,7 @@ async def test_owner_can_update_system_role_permissions(client):
 
 @pytest.mark.asyncio
 async def test_owner_can_assign_member_role(client):
-    create_r = await client.post(
-        "/organizations", json=ORG_PAYLOAD, headers=AUTH_HEADER
-    )
+    create_r = await client.post("/organizations", json=ORG_PAYLOAD, headers=AUTH_HEADER)
     org_id = create_r.json()["id"]
 
     invite_r = await client.post(

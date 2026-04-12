@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x12organization.proto\x12\x0corganization\"7\n\x14OrgMembershipRequest\x12\x0f\n\x07user_id\x18\x01 \x01(\t\x12\x0e\n\x06org_id\x18\x02 \x01(\t\"0\n\x1bOrgMembershipExistsResponse\x12\x11\n\tis_member\x18\x01 \x01(\x08\"+\n\x19OrganizationExistsRequest\x12\x0e\n\x06org_id\x18\x01 \x01(\t\",\n\x1aOrganizationExistsResponse\x12\x0e\n\x06\x65xists\x18\x01 \x01(\x08\",\n\x16VerifySecretKeyRequest\x12\x12\n\nsecret_key\x18\x01 \x01(\t\"m\n\x17VerifySecretKeyResponse\x12\r\n\x05valid\x18\x01 \x01(\x08\x12\x0e\n\x06org_id\x18\x02 \x01(\t\x12\x12\n\npublic_key\x18\x03 \x01(\t\x12\x0e\n\x06status\x18\x04 \x01(\t\x12\x0f\n\x07is_test\x18\x05 \x01(\x08\x32\xc8\x02\n\x13OrganizationService\x12\x63\n\x12\x43heckOrgMembership\x12\".organization.OrgMembershipRequest\x1a).organization.OrgMembershipExistsResponse\x12l\n\x17\x43heckOrganizationExists\x12\'.organization.OrganizationExistsRequest\x1a(.organization.OrganizationExistsResponse\x12^\n\x0fVerifySecretKey\x12$.organization.VerifySecretKeyRequest\x1a%.organization.VerifySecretKeyResponseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x12organization.proto\x12\x0corganization\"7\n\x14OrgMembershipRequest\x12\x0f\n\x07user_id\x18\x01 \x01(\t\x12\x0e\n\x06org_id\x18\x02 \x01(\t\"0\n\x1bOrgMembershipExistsResponse\x12\x11\n\tis_member\x18\x01 \x01(\x08\"+\n\x19OrganizationExistsRequest\x12\x0e\n\x06org_id\x18\x01 \x01(\t\",\n\x1aOrganizationExistsResponse\x12\x0e\n\x06\x65xists\x18\x01 \x01(\x08\",\n\x16VerifySecretKeyRequest\x12\x12\n\nsecret_key\x18\x01 \x01(\t\"\\\n\x17VerifySecretKeyResponse\x12\r\n\x05valid\x18\x01 \x01(\x08\x12\x0e\n\x06org_id\x18\x02 \x01(\t\x12\x12\n\npublic_key\x18\x03 \x01(\t\x12\x0e\n\x06status\x18\x04 \x01(\t2\xc8\x02\n\x13OrganizationService\x12\x63\n\x12\x43heckOrgMembership\x12\".organization.OrgMembershipRequest\x1a).organization.OrgMembershipExistsResponse\x12l\n\x17\x43heckOrganizationExists\x12\'.organization.OrganizationExistsRequest\x1a(.organization.OrganizationExistsResponse\x12^\n\x0fVerifySecretKey\x12$.organization.VerifySecretKeyRequest\x1a%.organization.VerifySecretKeyResponseb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -42,7 +42,7 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_VERIFYSECRETKEYREQUEST']._serialized_start=234
   _globals['_VERIFYSECRETKEYREQUEST']._serialized_end=278
   _globals['_VERIFYSECRETKEYRESPONSE']._serialized_start=280
-  _globals['_VERIFYSECRETKEYRESPONSE']._serialized_end=389
-  _globals['_ORGANIZATIONSERVICE']._serialized_start=392
-  _globals['_ORGANIZATIONSERVICE']._serialized_end=720
+  _globals['_VERIFYSECRETKEYRESPONSE']._serialized_end=372
+  _globals['_ORGANIZATIONSERVICE']._serialized_start=375
+  _globals['_ORGANIZATIONSERVICE']._serialized_end=703
 # @@protoc_insertion_point(module_scope)

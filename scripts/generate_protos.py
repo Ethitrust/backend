@@ -57,6 +57,7 @@ PROTO_TARGETS: dict[str, list[str]] = {
         "components/escrow/proto",
         "components/dispute/proto",
         "components/auth/proto",
+        "components/admin/proto",
     ],
     # Server: payment_provider | Clients: payment_link, escrow, wallet
     "payment_provider.proto": [

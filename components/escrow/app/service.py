@@ -228,8 +228,7 @@ class EscrowService:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
-                    f"Actor '{actor}' cannot transition from "
-                    f"'{current_status}' to '{new_status}'"
+                    f"Actor '{actor}' cannot transition from '{current_status}' to '{new_status}'"
                 ),
             )
 
@@ -246,24 +245,13 @@ class EscrowService:
         Route to the correct sub-handler based on escrow_type.
         Returns (escrow, payment_url).
         """
-        self._enforce_organization_role_rules(data)
         await self._normalize_and_validate_receiver(data)
 
-        if data.seller_type == "organization":
-            if actor_type != "organization":
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Organization-scoped escrow creation requires organization API key authentication",
-                )
+        if actor_type == "organization":
             if authenticated_org_id is None:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Unable to resolve authenticated organization",
-                )
-            if data.org_id != authenticated_org_id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Payload org_id does not match authenticated organization",
                 )
 
             initiator_actor_type = "organization"
@@ -306,16 +294,6 @@ class EscrowService:
             detail=f"Unknown escrow_type: {data.escrow_type}",
         )
 
-    def _enforce_organization_role_rules(self, data: BaseEscrowCreate) -> None:
-        if data.seller_type == "organization" and data.initiator_role != "seller":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    "Organization-scoped escrow can only be initiated as seller "
-                    "(initiator_role='seller')"
-                ),
-            )
-
     async def _normalize_and_validate_receiver(self, data: BaseEscrowCreate) -> None:
         if data.receiver_id is None and data.receiver_email is None:
             raise HTTPException(
@@ -329,9 +307,7 @@ class EscrowService:
             )
 
         if data.receiver_email is not None:
-            receiver_user = await grpc_clients.get_user_by_email(
-                str(data.receiver_email)
-            )
+            receiver_user = await grpc_clients.get_user_by_email(str(data.receiver_email))
             if receiver_user:
                 data.receiver_id = uuid.UUID(receiver_user["user_id"])
                 data.receiver_email = receiver_user["email"]
@@ -340,9 +316,7 @@ class EscrowService:
 
         if data.receiver_id is not None:
             try:
-                receiver_profile = await grpc_clients.get_user_by_id(
-                    str(data.receiver_id)
-                )
+                receiver_profile = await grpc_clients.get_user_by_id(str(data.receiver_id))
             except RuntimeError as exc:
                 raise HTTPException(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -414,9 +388,7 @@ class EscrowService:
     ) -> Escrow:
         escrow = await self.repo.get_by_id(escrow_id)
         if not escrow:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Escrow not found"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Escrow not found")
         if (
             escrow.initiator_id != user_id
             and escrow.receiver_id != user_id
@@ -459,6 +431,9 @@ class EscrowService:
                 "escrow_type": escrow.escrow_type,
                 "amount": escrow.amount,
                 "offer_version": escrow.offer_version,
+                "initiator_id": str(escrow.initiator_id) if escrow.initiator_id else None,
+                "receiver_id": str(escrow.receiver_id) if escrow.receiver_id else None,
+                "receiver_email": escrow.receiver_email,
             },
         )
 
@@ -466,9 +441,7 @@ class EscrowService:
         if buyer_id is None:
             return escrow, None
 
-        buyer_wallet_id = await grpc_clients.get_user_wallet(
-            str(buyer_id), escrow.currency
-        )
+        buyer_wallet_id = await grpc_clients.get_user_wallet(str(buyer_id), escrow.currency)
         if not buyer_wallet_id:
             return escrow, None
 
@@ -497,9 +470,69 @@ class EscrowService:
                 "escrow_id": str(escrow.id),
                 "transaction_ref": escrow.transaction_ref,
                 "activation_source": "wallet_lock",
+                "initiator_id": str(escrow.initiator_id) if escrow.initiator_id else None,
+                "receiver_id": str(escrow.receiver_id) if escrow.receiver_id else None,
+                "receiver_email": escrow.receiver_email,
             },
         )
         return escrow, None
+
+    async def activate_pending_escrows_for_buyer(
+        self,
+        buyer_id: uuid.UUID,
+        trigger_reference: str | None = None,
+    ) -> int:
+        """Retry wallet lock for pending escrows where *buyer_id* is the payer.
+
+        This is used by async funding events (e.g. wallet.deposit.success) so a
+        pending escrow can auto-transition to active once buyer balance is sufficient.
+        """
+        pending_escrows = await self.repo.list_pending_unfunded_for_participant(buyer_id)
+        activated_count = 0
+
+        for escrow in pending_escrows:
+            escrow_buyer_id, _ = self._resolve_buyer_and_seller_ids(escrow)
+            if escrow_buyer_id != buyer_id:
+                continue
+
+            buyer_wallet_id = await grpc_clients.get_user_wallet(str(buyer_id), escrow.currency)
+            if not buyer_wallet_id:
+                continue
+
+            try:
+                await grpc_clients.lock_funds(
+                    wallet_id=buyer_wallet_id,
+                    amount=escrow.amount,
+                    reference=escrow.transaction_ref,
+                    escrow_id=str(escrow.id),
+                )
+            except RuntimeError as exc:
+                if "INSUFFICIENT_BALANCE" in str(exc):
+                    continue
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Unable to lock buyer wallet funds",
+                ) from exc
+
+            self._assert_transition_allowed(escrow.status, "active", "system")
+            escrow.status = "active"
+            escrow.funded_at = datetime.now(timezone.utc)
+            escrow = await self.repo.save(escrow)
+            await publish(
+                "escrow.activated",
+                {
+                    "escrow_id": str(escrow.id),
+                    "transaction_ref": escrow.transaction_ref,
+                    "activation_source": "wallet_deposit_success",
+                    "trigger_reference": trigger_reference,
+                    "initiator_id": str(escrow.initiator_id) if escrow.initiator_id else None,
+                    "receiver_id": str(escrow.receiver_id) if escrow.receiver_id else None,
+                    "receiver_email": escrow.receiver_email,
+                },
+            )
+            activated_count += 1
+
+        return activated_count
 
     # ── Cancel ────────────────────────────────────────────────────────────────
 
@@ -542,9 +575,7 @@ class EscrowService:
 
         buyer_id, _ = self._resolve_buyer_and_seller_ids(escrow)
         if was_funded and escrow.transaction_ref and buyer_id:
-            wallet_id = await grpc_clients.get_user_wallet(
-                str(buyer_id), escrow.currency
-            )
+            wallet_id = await grpc_clients.get_user_wallet(str(buyer_id), escrow.currency)
             if wallet_id:
                 await grpc_clients.unlock_funds(
                     wallet_id=wallet_id,
@@ -558,9 +589,7 @@ class EscrowService:
             {
                 "escrow_id": str(escrow.id),
                 "transaction_ref": escrow.transaction_ref,
-                "initiator_id": (
-                    str(escrow.initiator_id) if escrow.initiator_id else None
-                ),
+                "initiator_id": (str(escrow.initiator_id) if escrow.initiator_id else None),
                 "initiator_org_id": (
                     str(escrow.initiator_org_id) if escrow.initiator_org_id else None
                 ),
@@ -583,9 +612,7 @@ class EscrowService:
         fee = _calculate_fee(data.amount)
         now = datetime.now(timezone.utc)
         invite_token = _generate_invite_token() if data.receiver_id is None else None
-        invite_token_hash = (
-            _hash_invite_token(invite_token) if invite_token is not None else None
-        )
+        invite_token_hash = _hash_invite_token(invite_token) if invite_token is not None else None
         escrow = await self.repo.create(
             transaction_ref=_temporary_transaction_ref(),
             escrow_type="onetime",
@@ -595,7 +622,7 @@ class EscrowService:
             initiator_org_id=initiator_org_id,
             receiver_id=data.receiver_id,
             receiver_email=data.receiver_email,  # always gonna be a receiver email
-            org_id=data.org_id,
+            org_id=initiator_org_id,
             initiator_role=data.initiator_role,
             title=data.title,
             description=data.description,
@@ -608,11 +635,9 @@ class EscrowService:
             dispute_window=data.dispute_window,
             how_dispute_handled=data.how_dispute_handled,
             who_pays_fees=data.who_pays_fees,
-            provider=data.provider,
             invite_token_hash=invite_token_hash,
             invite_expires_at=now + timedelta(hours=INVITATION_EXPIRY_HOURS),
             initiator_accepted_at=now if initiator_id is not None else None,
-            is_test=data.is_test,
         )
         await publish(
             "escrow.invite_received",
@@ -639,22 +664,22 @@ class EscrowService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only the buyer (initiator) can mark an escrow as complete",
             )
-        escrow = await self.transition_status(escrow, "completed", "system")
-        escrow.completed_at = datetime.now(timezone.utc)
-        await self.repo.save(escrow)
-
         buyer_id, seller_id = self._resolve_buyer_and_seller_ids(escrow)
         buyer_wallet = (
-            await grpc_clients.get_user_wallet(str(buyer_id), escrow.currency)
-            if buyer_id
-            else None
+            await grpc_clients.get_user_wallet(str(buyer_id), escrow.currency) if buyer_id else None
         )
         seller_wallet = (
             await grpc_clients.get_user_wallet(str(seller_id), escrow.currency)
             if seller_id
             else None
         )
-        if buyer_wallet and seller_wallet:
+        if not buyer_wallet or not seller_wallet:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Buyer or seller wallet is unavailable for fund release",
+            )
+
+        try:
             await grpc_clients.release_funds(
                 from_wallet_id=buyer_wallet,
                 to_wallet_id=seller_wallet,
@@ -662,6 +687,15 @@ class EscrowService:
                 reference=escrow.transaction_ref,
                 escrow_id=str(escrow.id),
             )
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Unable to release escrow funds",
+            ) from exc
+
+        escrow = await self.transition_status(escrow, "completed", "system")
+        escrow.completed_at = datetime.now(timezone.utc)
+        await self.repo.save(escrow)
 
         await publish(
             "escrow.completed",
@@ -670,6 +704,9 @@ class EscrowService:
                 "transaction_ref": escrow.transaction_ref,
                 "amount": escrow.amount,
                 "currency": escrow.currency,
+                "initiator_id": str(escrow.initiator_id) if escrow.initiator_id else None,
+                "receiver_id": str(escrow.receiver_id) if escrow.receiver_id else None,
+                "receiver_email": escrow.receiver_email,
             },
         )
         return escrow
@@ -687,9 +724,7 @@ class EscrowService:
         fee = _calculate_fee(total_amount)
         now = datetime.now(timezone.utc)
         invite_token = _generate_invite_token() if data.receiver_id is None else None
-        invite_token_hash = (
-            _hash_invite_token(invite_token) if invite_token is not None else None
-        )
+        invite_token_hash = _hash_invite_token(invite_token) if invite_token is not None else None
         escrow = await self.repo.create(
             transaction_ref=_temporary_transaction_ref(),
             escrow_type="milestone",
@@ -699,7 +734,7 @@ class EscrowService:
             initiator_org_id=initiator_org_id,
             receiver_id=data.receiver_id,
             receiver_email=(str(data.receiver_email) if data.receiver_email else None),
-            org_id=data.org_id,
+            org_id=initiator_org_id,
             initiator_role=data.initiator_role,
             title=data.title,
             description=data.description,
@@ -712,11 +747,9 @@ class EscrowService:
             dispute_window=data.dispute_window,
             how_dispute_handled=data.how_dispute_handled,
             who_pays_fees=data.who_pays_fees,
-            provider=data.provider,
             invite_token_hash=invite_token_hash,
             invite_expires_at=now + timedelta(hours=INVITATION_EXPIRY_HOURS),
             initiator_accepted_at=now if initiator_id is not None else None,
-            is_test=data.is_test,
         )
         for ms in data.milestones:
             await self.repo.create_milestone(
@@ -765,9 +798,7 @@ class EscrowService:
             )
         milestone = await self.repo.get_milestone(milestone_id)
         if not milestone or milestone.escrow_id != escrow_id:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Milestone not found"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Milestone not found")
         if milestone.status not in ("pending", "in_progress"):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -780,7 +811,14 @@ class EscrowService:
         )
         await publish(
             "milestone.delivered",
-            {"escrow_id": str(escrow_id), "milestone_id": str(milestone_id)},
+            {
+                "escrow_id": str(escrow_id),
+                "milestone_id": str(milestone_id),
+                "initiator_id": str(escrow.initiator_id) if escrow.initiator_id else None,
+                "receiver_id": str(escrow.receiver_id) if escrow.receiver_id else None,
+                "receiver_email": escrow.receiver_email,
+                "actor_user_id": str(user_id),
+            },
         )
         return milestone
 
@@ -799,9 +837,7 @@ class EscrowService:
             )
         milestone = await self.repo.get_milestone(milestone_id)
         if not milestone or milestone.escrow_id != escrow_id:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Milestone not found"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Milestone not found")
         if milestone.status != "delivered":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -843,18 +879,26 @@ class EscrowService:
                 {
                     "escrow_id": str(escrow_id),
                     "transaction_ref": escrow.transaction_ref,
+                    "initiator_id": str(escrow.initiator_id) if escrow.initiator_id else None,
+                    "receiver_id": str(escrow.receiver_id) if escrow.receiver_id else None,
+                    "receiver_email": escrow.receiver_email,
                 },
             )
 
         await publish(
             "milestone.approved",
-            {"escrow_id": str(escrow_id), "milestone_id": str(milestone_id)},
+            {
+                "escrow_id": str(escrow_id),
+                "milestone_id": str(milestone_id),
+                "initiator_id": str(escrow.initiator_id) if escrow.initiator_id else None,
+                "receiver_id": str(escrow.receiver_id) if escrow.receiver_id else None,
+                "receiver_email": escrow.receiver_email,
+                "actor_user_id": str(user_id),
+            },
         )
         return milestone
 
-    async def get_milestones(
-        self, escrow_id: uuid.UUID, user_id: uuid.UUID
-    ) -> list[Milestone]:
+    async def get_milestones(self, escrow_id: uuid.UUID, user_id: uuid.UUID) -> list[Milestone]:
         await self.get_escrow(escrow_id, user_id)
         return await self.repo.get_milestones(escrow_id)
 
@@ -870,9 +914,7 @@ class EscrowService:
         fee = _calculate_fee(data.cycle.expected_amount)
         now = datetime.now(timezone.utc)
         invite_token = _generate_invite_token() if data.receiver_id is None else None
-        invite_token_hash = (
-            _hash_invite_token(invite_token) if invite_token is not None else None
-        )
+        invite_token_hash = _hash_invite_token(invite_token) if invite_token is not None else None
         escrow = await self.repo.create(
             transaction_ref=_temporary_transaction_ref(),
             escrow_type="recurring",
@@ -882,7 +924,7 @@ class EscrowService:
             initiator_org_id=initiator_org_id,
             receiver_id=data.receiver_id,
             receiver_email=(str(data.receiver_email) if data.receiver_email else None),
-            org_id=data.org_id,
+            org_id=initiator_org_id,
             initiator_role=data.initiator_role,
             title=data.title,
             description=data.description,
@@ -895,11 +937,9 @@ class EscrowService:
             dispute_window=data.dispute_window,
             how_dispute_handled=data.how_dispute_handled,
             who_pays_fees=data.who_pays_fees,
-            provider=data.provider,
             invite_token_hash=invite_token_hash,
             invite_expires_at=now + timedelta(hours=INVITATION_EXPIRY_HOURS),
             initiator_accepted_at=now if initiator_id is not None else None,
-            is_test=data.is_test,
         )
         await self.repo.create_recurring_cycle(
             escrow_id=escrow.id,
@@ -1122,9 +1162,7 @@ class EscrowService:
                 detail="Escrow not found",
             )
 
-        escrow = await self._ensure_can_act_on_invitation(
-            escrow, user_id, body.invite_token
-        )
+        escrow = await self._ensure_can_act_on_invitation(escrow, user_id, body.invite_token)
         now = datetime.now(timezone.utc)
 
         if escrow.status == "invited" and user_id == escrow.initiator_id:
@@ -1195,9 +1233,7 @@ class EscrowService:
                 detail="Initiator cannot reject their own invitation. Use cancel instead.",
             )
 
-        escrow = await self._ensure_can_act_on_invitation(
-            escrow, user_id, body.invite_token
-        )
+        escrow = await self._ensure_can_act_on_invitation(escrow, user_id, body.invite_token)
         if escrow.status not in {
             "invited",
             "counter_pending_counterparty",
@@ -1207,10 +1243,7 @@ class EscrowService:
                 detail=f"Cannot reject an escrow in status '{escrow.status}'",
             )
 
-        if (
-            escrow.status == "counter_pending_counterparty"
-            and user_id != escrow.receiver_id
-        ):
+        if escrow.status == "counter_pending_counterparty" and user_id != escrow.receiver_id:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Only the pending counterparty can reject this counter-offer",
@@ -1266,9 +1299,7 @@ class EscrowService:
                 detail=f"Cannot counter an escrow in status '{escrow.status}'",
             )
 
-        escrow = await self._ensure_can_act_on_invitation(
-            escrow, user_id, body.invite_token
-        )
+        escrow = await self._ensure_can_act_on_invitation(escrow, user_id, body.invite_token)
         now = datetime.now(timezone.utc)
 
         expected_responder = self._expected_counter_responder(escrow)
@@ -1300,9 +1331,7 @@ class EscrowService:
             )
 
         proposed_to_user_id = (
-            escrow.receiver_id
-            if user_id == escrow.initiator_id
-            else escrow.initiator_id
+            escrow.receiver_id if user_id == escrow.initiator_id else escrow.initiator_id
         )
         if proposed_to_user_id is None:
             raise HTTPException(
@@ -1348,9 +1377,7 @@ class EscrowService:
         self._assert_transition_allowed(escrow.status, next_status, actor)
         escrow.status = next_status
         escrow.counter_status = (
-            "awaiting_counterparty"
-            if user_id == escrow.initiator_id
-            else "awaiting_initiator"
+            "awaiting_counterparty" if user_id == escrow.initiator_id else "awaiting_initiator"
         )
         escrow.active_counter_offer_version = escrow.offer_version
         escrow.last_countered_by_id = user_id
@@ -1472,9 +1499,7 @@ class EscrowService:
             )
         cycle = await self.repo.get_cycle(escrow_id)
         if not cycle:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Cycle not found"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cycle not found")
 
         if cycle.max_contributors is not None:
             count = await self.repo.count_contributors(cycle.id)
@@ -1534,6 +1559,13 @@ class EscrowService:
                             "escrow_id": str(escrow.id),
                             "transaction_ref": escrow.transaction_ref,
                             "trigger": "due_cycle",
+                            "initiator_id": (
+                                str(escrow.initiator_id) if escrow.initiator_id else None
+                            ),
+                            "receiver_id": (
+                                str(escrow.receiver_id) if escrow.receiver_id else None
+                            ),
+                            "receiver_email": escrow.receiver_email,
                         },
                     )
                     processed += 1
@@ -1554,6 +1586,9 @@ class EscrowService:
                 {
                     "escrow_id": str(escrow.id),
                     "offer_version": escrow.offer_version,
+                    "initiator_id": str(escrow.initiator_id) if escrow.initiator_id else None,
+                    "receiver_id": str(escrow.receiver_id) if escrow.receiver_id else None,
+                    "receiver_email": escrow.receiver_email,
                 },
             )
             processed += 1

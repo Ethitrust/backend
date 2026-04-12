@@ -25,8 +25,7 @@ from app.models import (
 from app.repository import DisputeRepository
 from app.service import DisputeService
 
-router = APIRouter(prefix="/escrow", tags=["dispute"])
-dispute_router = APIRouter(prefix="/disputes", tags=["dispute"])
+dispute_escrow_router = APIRouter(prefix="/dispute", tags=["dispute"])
 
 KYC_MIN_LEVEL = int(os.getenv("KYC_MIN_LEVEL", "1"))
 DISPUTE_INTERNAL_TOKEN = os.getenv("DISPUTE_INTERNAL_TOKEN", "").strip()
@@ -63,9 +62,7 @@ async def get_current_user(
     try:
         user = await grpc_clients.validate_token(authorization.credentials)
     except PermissionError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 
     # kyc_level = await _enforce_kyc_or_raise(user["user_id"])
     # user["kyc_level"] = kyc_level
@@ -76,7 +73,7 @@ def get_service(db: Annotated[AsyncSession, Depends(get_db)]) -> DisputeService:
     return DisputeService(DisputeRepository(db))
 
 
-@router.post(
+@dispute_escrow_router.post(
     "/{escrow_id}/dispute",
     status_code=status.HTTP_201_CREATED,
     response_model=DisputeResponse,
@@ -97,7 +94,7 @@ async def raise_dispute(
     return DisputeResponse.model_validate(dispute)
 
 
-@router.get("/{escrow_id}/dispute", response_model=DisputeResponse)
+@dispute_escrow_router.get("/{escrow_id}/dispute", response_model=DisputeResponse)
 async def get_dispute(
     escrow_id: uuid.UUID,
     current_user: dict = Depends(get_current_user),
@@ -116,7 +113,7 @@ async def get_dispute(
     )
 
 
-@router.post(
+@dispute_escrow_router.post(
     "/{escrow_id}/dispute/{dispute_id}/evidence",
     response_model=EvidenceResponse,
     status_code=status.HTTP_201_CREATED,
@@ -143,7 +140,7 @@ async def add_evidence(
     return EvidenceResponse.model_validate(evidence)
 
 
-@router.post(
+@dispute_escrow_router.post(
     "/{escrow_id}/dispute/{dispute_id}/resolve",
     response_model=DisputeResponse,
     status_code=status.HTTP_202_ACCEPTED,
@@ -168,7 +165,7 @@ async def resolve_dispute(
 
 
 # findout what the goal is here
-@dispute_router.post("/{dispute_id}/execute-resolution", response_model=DisputeResponse)
+@dispute_escrow_router.post("/{dispute_id}/execute-resolution", response_model=DisputeResponse)
 async def execute_resolution(
     dispute_id: uuid.UUID,
     body: DisputeExecutionRequest,
@@ -192,7 +189,7 @@ async def execute_resolution(
     return DisputeResponse.model_validate(dispute)
 
 
-@dispute_router.get("", response_model=PaginatedDisputeResponse)
+@dispute_escrow_router.get("", response_model=PaginatedDisputeResponse)
 async def list_disputes(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
@@ -215,7 +212,31 @@ async def list_disputes(
     )
 
 
-@dispute_router.post("/{dispute_id}/review", response_model=DisputeResponse)
+@dispute_escrow_router.get("/me", response_model=PaginatedDisputeResponse)
+async def list_my_disputes(
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    status_filter: str | None = Query(None, alias="status"),
+    current_user: dict = Depends(get_current_user),
+    svc: DisputeService = Depends(get_service),
+):
+    user_id = uuid.UUID(current_user["user_id"])
+    result = await svc.list_my_disputes(
+        user_id=user_id,
+        status_filter=status_filter,
+        page=page,
+        limit=limit,
+    )
+    return PaginatedDisputeResponse(
+        items=[DisputeSummaryResponse.model_validate(item) for item in result["items"]],
+        total=result["total"],
+        page=result["page"],
+        limit=result["limit"],
+        pages=result["pages"],
+    )
+
+
+@dispute_escrow_router.post("/{dispute_id}/review", response_model=DisputeResponse)
 async def move_dispute_to_review(
     dispute_id: uuid.UUID,
     body: DisputeReviewRequest,
@@ -232,7 +253,7 @@ async def move_dispute_to_review(
     return DisputeResponse.model_validate(dispute)
 
 
-@dispute_router.post("/{dispute_id}/cancel", response_model=DisputeResponse)
+@dispute_escrow_router.post("/{dispute_id}/cancel", response_model=DisputeResponse)
 async def cancel_dispute(
     dispute_id: uuid.UUID,
     current_user: dict = Depends(get_current_user),

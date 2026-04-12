@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 
 def _generate_key_pair(is_test: bool = False) -> tuple[str, str]:
-    mode = "test" if is_test else "live"
+    mode = "live"
     public_key = f"pk_{mode}_{secrets.token_hex(32)}"
     secret_key = f"sk_{mode}_{secrets.token_hex(32)}"
     return public_key, secret_key
@@ -44,9 +44,7 @@ class OrgService:
     @staticmethod
     def _validate_permissions(permissions: list[str]) -> list[str]:
         allowed = set(PERMISSION_CATALOG)
-        invalid = sorted(
-            {permission for permission in permissions if permission not in allowed}
-        )
+        invalid = sorted({permission for permission in permissions if permission not in allowed})
         if invalid:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -63,9 +61,7 @@ class OrgService:
             )
         return org
 
-    async def _require_owner(
-        self, org_id: uuid.UUID, actor_id: uuid.UUID
-    ) -> Organization:
+    async def _require_owner(self, org_id: uuid.UUID, actor_id: uuid.UUID) -> Organization:
         org = await self._require_org(org_id)
         if org.owner_id != actor_id:
             raise HTTPException(
@@ -101,9 +97,7 @@ class OrgService:
                 detail=f"Missing permission '{permission}'",
             )
 
-    async def create_org(
-        self, owner_id: uuid.UUID, data: OrgCreate
-    ) -> tuple[Organization, str]:
+    async def create_org(self, owner_id: uuid.UUID, data: OrgCreate) -> tuple[Organization, str]:
         """Returns (org, plain_secret_key). Secret key shown once."""
         if await self.repo.name_exists(data.name):
             raise HTTPException(
@@ -111,11 +105,9 @@ class OrgService:
                 detail="Organization name already taken",
             )
         if await self.repo.slug_exists(data.slug):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT, detail="Slug already taken"
-            )
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Slug already taken")
 
-        pk, sk = _generate_key_pair(data.is_test)
+        pk, sk = _generate_key_pair(False)
         org = Organization(
             owner_id=owner_id,
             name=data.name,
@@ -178,9 +170,7 @@ class OrgService:
     ) -> Organization:
         await self.repo.ensure_default_roles(org_id)
         await self._require_permission(org_id, user_id, ORG_SETTINGS_WEBHOOK_UPDATE)
-        return await self.repo.update_webhook(
-            org_id, data.webhook_url, data.webhook_secret
-        )
+        return await self.repo.update_webhook(org_id, data.webhook_url, data.webhook_secret)
 
     async def invite_member(
         self, org_id: uuid.UUID, user_id: uuid.UUID, data: MemberInvite

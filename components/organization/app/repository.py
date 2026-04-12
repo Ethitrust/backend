@@ -39,33 +39,28 @@ class OrgRepository:
         return r.scalar_one_or_none()
 
     async def get_by_public_key(self, pk: str) -> Organization | None:
-        r = await self.db.execute(
-            select(Organization).where(Organization.public_key == pk)
-        )
+        r = await self.db.execute(select(Organization).where(Organization.public_key == pk))
         return r.scalar_one_or_none()
 
     async def list_for_secret_key_verification(
         self,
-        is_test: bool | None = None,
+        is_test_scope: bool,
     ) -> list[Organization]:
         query = select(Organization)
-        if is_test is True:
+
+        if is_test_scope:
             query = query.where(Organization.public_key.like("pk_test_%"))
-        elif is_test is False:
+        else:
             query = query.where(Organization.public_key.like("pk_live_%"))
 
         result = await self.db.execute(query)
         return list(result.scalars().all())
 
     async def list_by_owner(self, owner_id: uuid.UUID) -> list[Organization]:
-        r = await self.db.execute(
-            select(Organization).where(Organization.owner_id == owner_id)
-        )
+        r = await self.db.execute(select(Organization).where(Organization.owner_id == owner_id))
         return list(r.scalars().all())
 
-    async def update_webhook(
-        self, org_id: uuid.UUID, url: str, secret: str
-    ) -> Organization | None:
+    async def update_webhook(self, org_id: uuid.UUID, url: str, secret: str) -> Organization | None:
         org = await self.get_by_id(org_id)
         if org:
             org.webhook_url = url
@@ -175,9 +170,7 @@ class OrgRepository:
         permissions: list[str],
     ) -> list[OrganizationRolePermission]:
         await self.db.execute(
-            delete(OrganizationRolePermission).where(
-                OrganizationRolePermission.role_id == role_id
-            )
+            delete(OrganizationRolePermission).where(OrganizationRolePermission.role_id == role_id)
         )
         records: list[OrganizationRolePermission] = []
         for permission_key in permissions:

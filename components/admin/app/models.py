@@ -144,6 +144,25 @@ class UserModerationTimelineResponse(BaseModel):
     items: list[UserModerationTimelineItem]
 
 
+class AdminUserSummary(BaseModel):
+    user_id: uuid.UUID
+    email: str | None = None
+    role: str | None = None
+    is_verified: bool | None = None
+    is_banned: bool | None = None
+    kyc_level: int | None = None
+
+
+class AdminEscrowSummary(BaseModel):
+    escrow_id: uuid.UUID
+    status: str
+    escrow_type: str
+    initiator_id: uuid.UUID | None = None
+    receiver_id: uuid.UUID | None = None
+    amount: int
+    currency: str
+
+
 class DisputeQueueItem(BaseModel):
     dispute_id: uuid.UUID
     escrow_id: uuid.UUID
@@ -156,6 +175,10 @@ class DisputeQueueItem(BaseModel):
     created_at: datetime
     updated_at: datetime
     is_sla_breached: bool
+    escrow: AdminEscrowSummary | None = None
+    raised_by_user: AdminUserSummary | None = None
+    initiator_user: AdminUserSummary | None = None
+    receiver_user: AdminUserSummary | None = None
 
 
 class DisputeQueueListResponse(BaseModel):

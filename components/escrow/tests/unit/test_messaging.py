@@ -7,28 +7,38 @@ from app.messaging import handle_event
 
 
 @pytest.mark.asyncio
-async def test_payment_completed_uses_reference_fallback_but_does_not_activate() -> (
-    None
-):
+async def test_wallet_deposit_success_triggers_pending_activation_retry() -> None:
+    mock_service = AsyncMock()
+    mock_service.activate_pending_escrows_for_buyer = AsyncMock(return_value=1)
+    mock_repo = object()
+
+    class _DummySession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
     with (
-        patch("app.messaging.publish", AsyncMock()) as mock_publish,
+        patch("app.db.async_session_factory", return_value=_DummySession()),
+        patch("app.repository.EscrowRepository", return_value=mock_repo),
+        patch("app.service.EscrowService", return_value=mock_service),
     ):
         await handle_event(
-            "payment.completed",
+            "wallet.deposit.success",
             {
-                "reference": "pay-ref-42",
-                "amount": 1000,
-                "currency": "ETB",
+                "user_id": "11111111-1111-4111-8111-11111111111a",
+                "reference": "wallet-deposit-ref-1",
             },
         )
 
-    mock_publish.assert_not_called()
+    mock_service.activate_pending_escrows_for_buyer.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_payment_completed_is_idempotent_when_not_pending() -> None:
+async def test_payment_completed_with_missing_user_id_is_ignored() -> None:
     with (
-        patch("app.messaging.publish", AsyncMock()) as mock_publish,
+        patch("app.db.async_session_factory", side_effect=AssertionError()),
     ):
         await handle_event(
             "payment.completed",
@@ -38,5 +48,3 @@ async def test_payment_completed_is_idempotent_when_not_pending() -> None:
                 "currency": "ETB",
             },
         )
-
-    mock_publish.assert_not_called()

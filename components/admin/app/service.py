@@ -25,6 +25,8 @@ from app.db import (
 from app.models import (
     AdminActionLog,
     AdminActionLogListResponse,
+    AdminEscrowSummary,
+    AdminUserSummary,
     AnalyticsDisputeThroughputResponse,
     AnalyticsGrowthResponse,
     AnalyticsKpiPoint,
@@ -186,9 +188,7 @@ class AdminService:
         now = datetime.now(tz=timezone.utc)
         created_at = self._normalize_datetime(row.created_at)
         updated_at = self._normalize_datetime(row.updated_at)
-        sla_due_at = (
-            self._normalize_datetime(row.sla_due_at) if row.sla_due_at else None
-        )
+        sla_due_at = self._normalize_datetime(row.sla_due_at) if row.sla_due_at else None
         is_sla_breached = bool(
             sla_due_at and sla_due_at < now and self._status_is_sla_eligible(row.status)
         )
@@ -206,9 +206,7 @@ class AdminService:
             is_sla_breached=is_sla_breached,
         )
 
-    def _payout_queue_row_to_response(
-        self, row: AdminPayoutQueueRecord
-    ) -> PayoutQueueItem:
+    def _payout_queue_row_to_response(self, row: AdminPayoutQueueRecord) -> PayoutQueueItem:
         return PayoutQueueItem(
             payout_id=row.payout_id,
             user_id=row.user_id,
@@ -235,9 +233,7 @@ class AdminService:
     def _config_target_uuid(config_key: str) -> uuid.UUID:
         return uuid.uuid5(uuid.NAMESPACE_URL, f"admin.system_config:{config_key}")
 
-    def _system_config_row_to_response(
-        self, row: AdminSystemConfigRecord
-    ) -> SystemConfigItem:
+    def _system_config_row_to_response(self, row: AdminSystemConfigRecord) -> SystemConfigItem:
         return SystemConfigItem(
             key=row.config_key,
             value=row.value_json,
@@ -269,9 +265,7 @@ class AdminService:
         return normalized.replace(hour=0, minute=0, second=0, microsecond=0)
 
     @staticmethod
-    def _build_day_value_map(
-        *, since: datetime, window_days: int
-    ) -> dict[datetime, float]:
+    def _build_day_value_map(*, since: datetime, window_days: int) -> dict[datetime, float]:
         return {(since + timedelta(days=offset)): 0.0 for offset in range(window_days)}
 
     def _daily_points(self, values: dict[datetime, float]) -> list[AnalyticsKpiPoint]:
@@ -296,9 +290,7 @@ class AdminService:
             return default
         return parsed
 
-    def _parse_window_days(
-        self, filters: dict[str, Any] | None, *, default: int = 30
-    ) -> int:
+    def _parse_window_days(self, filters: dict[str, Any] | None, *, default: int = 30) -> int:
         if not filters:
             return default
         parsed = self._as_int(filters.get("window_days"), default=default)
@@ -322,13 +314,9 @@ class AdminService:
             if isinstance(value, list):
                 for item in value:
                     if isinstance(item, dict) and "bucket" in item and "value" in item:
-                        writer.writerow(
-                            [section, "series", item["bucket"], item["value"]]
-                        )
+                        writer.writerow([section, "series", item["bucket"], item["value"]])
                     else:
-                        writer.writerow(
-                            [section, "list_item", "", json.dumps(item, default=str)]
-                        )
+                        writer.writerow([section, "list_item", "", json.dumps(item, default=str)])
                 return
 
             writer.writerow([section, "value", "", value])
@@ -410,9 +398,7 @@ class AdminService:
             else self._coerce_int(existing_values.get("fees.max_fee_amount"))
         )
         if min_fee is not None and max_fee is not None and min_fee > max_fee:
-            errors.append(
-                "fees.min_fee_amount cannot be greater than fees.max_fee_amount"
-            )
+            errors.append("fees.min_fee_amount cannot be greater than fees.max_fee_amount")
 
         return normalized, errors
 
@@ -462,14 +448,10 @@ class AdminService:
             status=status_value,
             provider=str(payload.get("provider")) if payload.get("provider") else None,
             provider_ref=(
-                str(payload.get("provider_ref"))
-                if payload.get("provider_ref")
-                else None
+                str(payload.get("provider_ref")) if payload.get("provider_ref") else None
             ),
             failure_reason=(
-                str(payload.get("failure_reason"))
-                if payload.get("failure_reason")
-                else None
+                str(payload.get("failure_reason")) if payload.get("failure_reason") else None
             ),
             payout_created_at=self._normalize_datetime(payload.get("created_at")),
         )
@@ -478,18 +460,14 @@ class AdminService:
         self, user_id: uuid.UUID, role: str, admin_id: uuid.UUID
     ) -> UserAdminView:
         if role not in ("admin", "moderator", "user"):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid role"
-            )
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid role")
 
         before_role: str | None = None
         try:
             profile = await grpc_clients.get_user_by_id(str(user_id))
             before_role = profile.get("role")
         except RuntimeError:
-            logger.exception(
-                "unable to fetch current user role for audit user_id=%s", user_id
-            )
+            logger.exception("unable to fetch current user role for audit user_id=%s", user_id)
 
         result = await grpc_clients.update_user_role(user_id, role)
         await self._log_action(
@@ -523,9 +501,7 @@ class AdminService:
             profile = await grpc_clients.get_user_by_id(str(user_id))
             before_is_banned = bool(profile.get("is_banned"))
         except RuntimeError:
-            logger.exception(
-                "unable to fetch current user status for audit user_id=%s", user_id
-            )
+            logger.exception("unable to fetch current user status for audit user_id=%s", user_id)
 
         result = await grpc_clients.ban_user(user_id, ban, reason)
         action = "user.banned" if ban else "user.unbanned"
@@ -541,11 +517,7 @@ class AdminService:
             action=action,
             target_type="user",
             target_id=user_id,
-            before=(
-                {"is_banned": before_is_banned}
-                if before_is_banned is not None
-                else None
-            ),
+            before=({"is_banned": before_is_banned} if before_is_banned is not None else None),
             after={"is_banned": ban, "is_active": result["is_active"]},
             metadata={"reason": reason, "source": "admin-service"},
         )
@@ -593,6 +565,103 @@ class AdminService:
             limit=limit,
         )
 
+    @staticmethod
+    def _maybe_uuid(value: Any) -> uuid.UUID | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        try:
+            return uuid.UUID(text)
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _user_summary(profile: dict[str, Any]) -> AdminUserSummary:
+        user_id = uuid.UUID(str(profile["user_id"]))
+        return AdminUserSummary(
+            user_id=user_id,
+            email=profile.get("email"),
+            role=profile.get("role"),
+            is_verified=profile.get("is_verified"),
+            is_banned=profile.get("is_banned"),
+            kyc_level=int(profile["kyc_level"]) if profile.get("kyc_level") is not None else None,
+        )
+
+    async def get_dispute_queue_item_detail(
+        self,
+        *,
+        dispute_id: uuid.UUID,
+        token: str,
+    ) -> DisputeQueueItem:
+        row = await self.repo.get_dispute_queue_item(dispute_id=dispute_id)
+        if row is None:
+            try:
+                upstream = await grpc_clients.list_disputes(
+                    token=token,
+                    status_filter=None,
+                    page=1,
+                    limit=200,
+                )
+            except RuntimeError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="Unable to fetch dispute details from dispute service",
+                ) from exc
+
+            for item in upstream.get("items", []):
+                await self._upsert_queue_from_dispute_payload(item)
+
+            row = await self.repo.get_dispute_queue_item(dispute_id=dispute_id)
+            if row is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Dispute queue item not found",
+                )
+
+        result = self._queue_row_to_response(row)
+
+        try:
+            escrow_payload = await grpc_clients.get_escrow(escrow_id=row.escrow_id)
+        except RuntimeError:
+            escrow_payload = None
+
+        if escrow_payload is not None:
+            initiator_id = self._maybe_uuid(escrow_payload.get("initiator_id"))
+            receiver_id = self._maybe_uuid(escrow_payload.get("receiver_id"))
+            result.escrow = AdminEscrowSummary(
+                escrow_id=uuid.UUID(str(escrow_payload["escrow_id"])),
+                status=str(escrow_payload["status"]),
+                escrow_type=str(escrow_payload["escrow_type"]),
+                initiator_id=initiator_id,
+                receiver_id=receiver_id,
+                amount=int(escrow_payload["amount"]),
+                currency=str(escrow_payload["currency"]),
+            )
+
+            try:
+                raised_profile = await grpc_clients.get_user_by_id(str(row.raised_by))
+                result.raised_by_user = self._user_summary(raised_profile)
+            except RuntimeError:
+                pass
+
+            if initiator_id is not None:
+                try:
+                    initiator_profile = await grpc_clients.get_user_by_id(str(initiator_id))
+                    result.initiator_user = self._user_summary(initiator_profile)
+                except RuntimeError:
+                    pass
+
+            if receiver_id is not None:
+                try:
+                    receiver_profile = await grpc_clients.get_user_by_id(str(receiver_id))
+                    result.receiver_user = self._user_summary(receiver_profile)
+                except RuntimeError:
+                    pass
+
+        return result
+
     async def update_dispute_queue_item(
         self,
         *,
@@ -638,18 +707,12 @@ class AdminService:
             before={
                 "priority": before.priority,
                 "assignee_id": str(before.assignee_id) if before.assignee_id else None,
-                "sla_due_at": before.sla_due_at.isoformat()
-                if before.sla_due_at
-                else None,
+                "sla_due_at": before.sla_due_at.isoformat() if before.sla_due_at else None,
             },
             after={
                 "priority": updated.priority,
-                "assignee_id": str(updated.assignee_id)
-                if updated.assignee_id
-                else None,
-                "sla_due_at": updated.sla_due_at.isoformat()
-                if updated.sla_due_at
-                else None,
+                "assignee_id": str(updated.assignee_id) if updated.assignee_id else None,
+                "sla_due_at": updated.sla_due_at.isoformat() if updated.sla_due_at else None,
             },
             metadata={"source": "admin-service"},
         )
@@ -797,9 +860,7 @@ class AdminService:
                     refund_entries = await grpc_clients.refund_fee_for_escrow(
                         escrow_id=body.escrow_id
                     )
-                    fee_refund_status = (
-                        "applied" if refund_entries else "no_fee_entries_found"
-                    )
+                    fee_refund_status = "applied" if refund_entries else "no_fee_entries_found"
                 except RuntimeError:
                     logger.exception(
                         "fee refund failed for escrow_id=%s dispute_id=%s",
@@ -945,9 +1006,7 @@ class AdminService:
             },
             after={
                 "priority": updated.priority,
-                "assignee_id": str(updated.assignee_id)
-                if updated.assignee_id
-                else None,
+                "assignee_id": str(updated.assignee_id) if updated.assignee_id else None,
             },
             metadata={"source": "admin-service"},
         )
@@ -1045,18 +1104,12 @@ class AdminService:
                 detail="window_days must be between 1 and 365",
             )
 
-        since = self._day_bucket(
-            datetime.now(tz=timezone.utc) - timedelta(days=window_days - 1)
-        )
+        since = self._day_bucket(datetime.now(tz=timezone.utc) - timedelta(days=window_days - 1))
         disputes = await self.repo.list_dispute_queue_since(since=since)
         payouts = await self.repo.list_payout_queue_since(since=since)
 
-        disputes_created = self._build_day_value_map(
-            since=since, window_days=window_days
-        )
-        payouts_created = self._build_day_value_map(
-            since=since, window_days=window_days
-        )
+        disputes_created = self._build_day_value_map(since=since, window_days=window_days)
+        payouts_created = self._build_day_value_map(since=since, window_days=window_days)
         payout_volume = self._build_day_value_map(since=since, window_days=window_days)
 
         for row in disputes:
@@ -1088,15 +1141,11 @@ class AdminService:
                 detail="window_days must be between 1 and 365",
             )
 
-        since = self._day_bucket(
-            datetime.now(tz=timezone.utc) - timedelta(days=window_days - 1)
-        )
+        since = self._day_bucket(datetime.now(tz=timezone.utc) - timedelta(days=window_days - 1))
         disputes = await self.repo.list_dispute_queue_since(since=since)
 
         opened_series = self._build_day_value_map(since=since, window_days=window_days)
-        resolved_series = self._build_day_value_map(
-            since=since, window_days=window_days
-        )
+        resolved_series = self._build_day_value_map(since=since, window_days=window_days)
 
         opened = 0
         resolved = 0
@@ -1115,16 +1164,12 @@ class AdminService:
                 if resolved_bucket in resolved_series:
                     resolved_series[resolved_bucket] += 1
                     resolved += 1
-                duration_hours = max(
-                    (resolved_at - created_at).total_seconds() / 3600, 0.0
-                )
+                duration_hours = max((resolved_at - created_at).total_seconds() / 3600, 0.0)
                 resolution_hours.append(duration_hours)
 
         resolution_rate = round((resolved / opened) * 100, 2) if opened else 0.0
         avg_resolution_hours = (
-            round(sum(resolution_hours) / len(resolution_hours), 2)
-            if resolution_hours
-            else None
+            round(sum(resolution_hours) / len(resolution_hours), 2) if resolution_hours else None
         )
 
         return AnalyticsDisputeThroughputResponse(
@@ -1148,9 +1193,7 @@ class AdminService:
                 detail="window_days must be between 1 and 365",
             )
 
-        since = self._day_bucket(
-            datetime.now(tz=timezone.utc) - timedelta(days=window_days - 1)
-        )
+        since = self._day_bucket(datetime.now(tz=timezone.utc) - timedelta(days=window_days - 1))
         payouts = await self.repo.list_payout_queue_since(since=since)
 
         success_series = self._build_day_value_map(since=since, window_days=window_days)
@@ -1207,9 +1250,7 @@ class AdminService:
                 detail="window_days must be between 1 and 365",
             )
 
-        since = self._day_bucket(
-            datetime.now(tz=timezone.utc) - timedelta(days=window_days - 1)
-        )
+        since = self._day_bucket(datetime.now(tz=timezone.utc) - timedelta(days=window_days - 1))
         payouts = await self.repo.list_payout_queue_since(since=since)
         volume_series = self._build_day_value_map(since=since, window_days=window_days)
 
@@ -1452,26 +1493,24 @@ class AdminService:
         window_days = self._parse_window_days(filters)
 
         if report_type == "growth":
-            return (
-                await self.get_analytics_growth(window_days=window_days)
-            ).model_dump(mode="json")
+            return (await self.get_analytics_growth(window_days=window_days)).model_dump(
+                mode="json"
+            )
         if report_type == "dispute_throughput":
             return (
                 await self.get_analytics_dispute_throughput(window_days=window_days)
             ).model_dump(mode="json")
         if report_type == "payout_health":
-            return (
-                await self.get_analytics_payout_health(window_days=window_days)
-            ).model_dump(mode="json")
+            return (await self.get_analytics_payout_health(window_days=window_days)).model_dump(
+                mode="json"
+            )
         if report_type == "volume":
-            return (
-                await self.get_analytics_volume(window_days=window_days)
-            ).model_dump(mode="json")
+            return (await self.get_analytics_volume(window_days=window_days)).model_dump(
+                mode="json"
+            )
         if report_type == "dashboard_snapshot":
             growth = await self.get_analytics_growth(window_days=window_days)
-            dispute = await self.get_analytics_dispute_throughput(
-                window_days=window_days
-            )
+            dispute = await self.get_analytics_dispute_throughput(window_days=window_days)
             payout = await self.get_analytics_payout_health(window_days=window_days)
             volume = await self.get_analytics_volume(window_days=window_days)
             return {
@@ -1616,9 +1655,7 @@ class AdminService:
         value: Any,
     ) -> SystemConfigDryRunResponse:
         normalized_key = self._normalize_config_key(config_key)
-        existing_item = await self.repo.get_system_config_item(
-            config_key=normalized_key
-        )
+        existing_item = await self.repo.get_system_config_item(config_key=normalized_key)
         existing_values = await self._get_system_config_value_map()
         normalized_value, errors = self._validate_system_config_value(
             config_key=normalized_key,
@@ -1656,9 +1693,7 @@ class AdminService:
                 detail={"errors": dry_run.errors},
             )
 
-        action = (
-            "system_config.created" if existing is None else "system_config.updated"
-        )
+        action = "system_config.created" if existing is None else "system_config.updated"
         config_item, history_item = await self.repo.create_or_update_system_config(
             config_key=normalized_key,
             value=dry_run.normalized_value,
@@ -1914,9 +1949,7 @@ class AdminService:
             idempotency_key=idempotency_key,
         )
         if existing and existing.response_payload:
-            return UserVerificationOverrideResponse.model_validate(
-                existing.response_payload
-            )
+            return UserVerificationOverrideResponse.model_validate(existing.response_payload)
 
         try:
             profile = await grpc_clients.get_user_by_id(str(user_id))
@@ -2149,9 +2182,7 @@ class AdminService:
             target_id=user_id,
             limit=limit,
         )
-        overrides = await self.repo.list_verification_overrides(
-            user_id=user_id, limit=limit
-        )
+        overrides = await self.repo.list_verification_overrides(user_id=user_id, limit=limit)
         risk_flags = await self.repo.list_risk_flags(user_id=user_id, limit=limit)
 
         timeline_items: list[UserModerationTimelineItem] = []

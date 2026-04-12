@@ -27,9 +27,7 @@ class BaseEscrowCreate(BaseModel):
     description: Optional[str] = None
     receiver_id: Optional[uuid.UUID] = None
     receiver_email: Optional[EmailStr] = None
-    org_id: Optional[uuid.UUID] = None
-    seller_type: Literal["individual", "organization"] = "individual"
-    initiator_role: Literal["buyer", "seller", "broker"] = "buyer"
+    initiator_role: Literal["buyer", "seller"] = "buyer"
     currency: str = Field(..., min_length=3, max_length=10, pattern=r"^[A-Z]{3,10}$")
     amount: int = Field(..., gt=0)
     acceptance_criteria: Optional[str] = None
@@ -38,24 +36,11 @@ class BaseEscrowCreate(BaseModel):
     dispute_window: int = Field(DEFAULT_DISPUTE_WINDOW_HOURS, ge=1)
     how_dispute_handled: Literal["platform"] = "platform"  # , "arbitrator", "mutual"
     who_pays_fees: Literal["buyer", "seller", "split"] = "buyer"
-    provider: str = Field("chapa", min_length=2, max_length=50)
-    is_test: bool = False
 
     @model_validator(mode="after")
     def validate_party_shape(self) -> BaseEscrowCreate:
         if self.receiver_id is None and self.receiver_email is None:
             raise ValueError("Either receiver_id or receiver_email is required")
-
-        if self.seller_type == "organization" and self.org_id is None:
-            raise ValueError("org_id is required when seller_type is 'organization'")
-
-        if self.seller_type == "organization" and self.initiator_role != "seller":
-            raise ValueError(
-                "initiator_role must be 'seller' when seller_type is 'organization'"
-            )
-
-        if self.seller_type == "individual" and self.org_id is not None:
-            raise ValueError("org_id is only valid when seller_type is 'organization'")
 
         if self.delivery_date is not None:
             now = datetime.now(timezone.utc)
@@ -102,9 +87,7 @@ class MilestoneEscrowCreate(BaseEscrowCreate):
     def validate_amount_matches_milestones(self) -> MilestoneEscrowCreate:
         total = sum(m.amount for m in self.milestones)
         if self.amount != total:
-            raise ValueError(
-                "For milestone escrow, amount must equal sum(milestones.amount)"
-            )
+            raise ValueError("For milestone escrow, amount must equal sum(milestones.amount)")
         return self
 
 
@@ -118,10 +101,7 @@ class RecurringCycleCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_cycle_limits(self) -> RecurringCycleCreate:
-        if (
-            self.max_contributors is not None
-            and self.max_contributors < self.min_contributors
-        ):
+        if self.max_contributors is not None and self.max_contributors < self.min_contributors:
             raise ValueError("max_contributors must be >= min_contributors")
 
         if self.due_date is not None:
@@ -141,9 +121,7 @@ class RecurringEscrowCreate(BaseEscrowCreate):
     @model_validator(mode="after")
     def validate_amount_matches_cycle(self) -> RecurringEscrowCreate:
         if self.amount != self.cycle.expected_amount:
-            raise ValueError(
-                "For recurring escrow, amount must equal cycle.expected_amount"
-            )
+            raise ValueError("For recurring escrow, amount must equal cycle.expected_amount")
         return self
 
 
@@ -244,13 +222,11 @@ class EscrowResponse(BaseModel):
     amount: int
     fee_amount: int
     who_pays_fees: str
-    provider: str
     offer_version: int
     counter_status: str
     active_counter_offer_version: Optional[int]
     last_countered_by_id: Optional[uuid.UUID]
     last_countered_at: Optional[datetime]
-    is_test: bool
     created_at: datetime
     updated_at: datetime
     counter_history: list["CounterOfferResponse"] = Field(default_factory=list)

@@ -25,7 +25,7 @@ from app.models import (
 from app.repository import OrgRepository
 from app.service import OrgService
 
-router = APIRouter(prefix="/organizations", tags=["organizations"])
+router = APIRouter(prefix="/organization", tags=["organizations"])
 
 KYC_MIN_LEVEL = int(os.getenv("KYC_MIN_LEVEL", "1"))
 
@@ -61,9 +61,7 @@ async def get_current_user(
     try:
         user = await grpc_clients.validate_token(authorization.credentials)
     except PermissionError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 
     # kyc_level = await _enforce_kyc_or_raise(user["user_id"])
     # user["kyc_level"] = kyc_level
@@ -204,9 +202,7 @@ async def update_role_permissions(
 
 # TODO: implement proper access control for the org-member should not be accessable by just any user
 # only can remove their own member and only org creator aor admin can remove member admin can't remove admin or promot one and org creator can demote/promot/delete admin/user
-@router.delete(
-    "/{org_id}/members/{target_user_id}", status_code=status.HTTP_204_NO_CONTENT
-)
+@router.delete("/{org_id}/members/{target_user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_member(
     org_id: uuid.UUID,
     target_user_id: uuid.UUID,

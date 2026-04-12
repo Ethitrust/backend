@@ -38,6 +38,7 @@ GRPC_PORT = int(os.getenv("GRPC_PORT", "50051"))
 
 import proto.organization_pb2 as organization_pb2
 import proto.organization_pb2_grpc as organization_pb2_grpc
+
 from app.db import AsyncSessionLocal, Organization, OrganizationMember
 from app.repository import OrgRepository
 from app.service import OrgService
@@ -77,9 +78,7 @@ class OrganizationServicer(organization_pb2_grpc.OrganizationServiceServicer):
             await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Invalid org_id")
 
         async with AsyncSessionLocal() as session:
-            r = await session.execute(
-                select(Organization).where(Organization.id == org_id)
-            )
+            r = await session.execute(select(Organization).where(Organization.id == org_id))
             exists = r.scalar_one_or_none() is not None
 
         return organization_pb2.OrganizationExistsResponse(exists=exists)
@@ -102,19 +101,13 @@ class OrganizationServicer(organization_pb2_grpc.OrganizationServiceServicer):
             return organization_pb2.VerifySecretKeyResponse(valid=False)
 
         return organization_pb2.VerifySecretKeyResponse(
-            valid=True,
-            org_id=str(org.id),
-            public_key=org.public_key,
-            status=org.status,
-            is_test=org.public_key.startswith("pk_test_"),
+            valid=True, org_id=str(org.id), public_key=org.public_key, status=org.status
         )
 
 
 async def serve() -> None:
     server = grpc.aio.server()
-    organization_pb2_grpc.add_OrganizationServiceServicer_to_server(
-        OrganizationServicer(), server
-    )
+    organization_pb2_grpc.add_OrganizationServiceServicer_to_server(OrganizationServicer(), server)
     server.add_insecure_port(f"[::]:{GRPC_PORT}")
     logger.info("Organization gRPC server starting on port %s", GRPC_PORT)
     await server.start()

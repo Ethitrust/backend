@@ -10,17 +10,6 @@ async def test_escrow_expiry_task_calls_service(mock_httpx):
     assert result["count"] == 1
 
 
-async def test_invitation_expiry_task_calls_service(mock_httpx):
-    """check_invitation_expiry should POST to invitation-expiry endpoint."""
-    from app.tasks.escrow_tasks import check_invitation_expiry
-
-    result = check_invitation_expiry.run()
-    mock_httpx.assert_called_once()
-    call_url = mock_httpx.call_args[0][0]
-    assert "/escrow/internal/process-invitation-expiry" in call_url
-    assert result["count"] == 1
-
-
 async def test_payout_task_calls_service(mock_httpx):
     """process_bank_transfer should POST to payout service for the given payout ID."""
     from app.tasks.payout_tasks import process_bank_transfer

@@ -9,7 +9,7 @@ import os
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -71,17 +71,13 @@ async def get_current_user(
     try:
         user = await grpc_clients.validate_token(authorization.credentials)
     except PermissionError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 
     logger.info(f"User token validated: {str(user)}")
     try:
         profile = await grpc_clients.get_user_by_id(user["user_id"])
     except RuntimeError as exc:
-        logger.error(
-            f"Failed to fetch user profile for user_id {user['user_id']}: {exc}"
-        )
+        logger.error(f"Failed to fetch user profile for user_id {user['user_id']}: {exc}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Unable to verify KYC status",
@@ -135,7 +131,6 @@ async def get_create_actor(
             "org_id": org["org_id"],
             "public_key": org["public_key"],
             "status": org["status"],
-            "is_test": org["is_test"],
         }
 
     user = await get_current_user(authorization)
@@ -144,6 +139,36 @@ async def get_create_actor(
         "user_id": user["user_id"],
         "email": user.get("email"),
         "kyc_level": user.get("kyc_level"),
+    }
+
+
+async def get_org_create_actor_from_secret_key(
+    x_org_secret_key: Annotated[str | None, Header(alias="X-Org-Secret-Key")],
+) -> dict:
+    if not x_org_secret_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing X-Org-Secret-Key header",
+        )
+
+    try:
+        org = await grpc_clients.verify_organization_secret_key(x_org_secret_key)
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(exc),
+        ) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to verify organization API key",
+        ) from exc
+
+    return {
+        "actor_type": "organization",
+        "org_id": org["org_id"],
+        "public_key": org["public_key"],
+        "status": org["status"],
     }
 
 
@@ -171,9 +196,7 @@ async def build_escrow_response(
 # ─── Routes ───────────────────────────────────────────────────────────────────
 
 
-@router.post(
-    "", status_code=status.HTTP_201_CREATED, response_model=InitializeEscrowResponse
-)
+@router.post("", status_code=status.HTTP_201_CREATED, response_model=InitializeEscrowResponse)
 async def initialize_escrow(
     body: EscrowCreateRequest,
     current_actor: dict = Depends(get_create_actor),
@@ -197,9 +220,30 @@ async def initialize_escrow(
     )
 
 
-@router.get(
-    "/{escrow_id}/invitation/precheck", response_model=InvitationPrecheckResponse
+@router.post(
+    "/organization",
+    status_code=status.HTTP_201_CREATED,
+    response_model=InitializeEscrowResponse,
 )
+async def initialize_organization_escrow(
+    body: EscrowCreateRequest,
+    org_actor: dict = Depends(get_org_create_actor_from_secret_key),
+    svc: EscrowService = Depends(get_service),
+):
+    """Create an organization-scoped escrow using X-Org-Secret-Key authentication."""
+    escrow, payment_url = await svc.initialize(
+        data=body,
+        actor_type="organization",
+        initiator_id=None,
+        authenticated_org_id=uuid.UUID(org_actor["org_id"]),
+    )
+    return InitializeEscrowResponse(
+        escrow=await build_escrow_response(svc, escrow),
+        payment_url=payment_url,
+    )
+
+
+@router.get("/{escrow_id}/invitation/precheck", response_model=InvitationPrecheckResponse)
 async def precheck_invitation(
     escrow_id: uuid.UUID,
     token: str = Query(..., min_length=16),
@@ -387,35 +431,3 @@ async def approve_milestone(
 #     user_id = uuid.UUID(current_user["user_id"])
 #     contributor = await svc.join_cycle(escrow_id, user_id, body)
 #     return RecurringContributorResponse.model_validate(contributor)
-
-
-# we should use either a background worker with grpc calls or a message queue for this kind of thing,
-# lets remove it after replacing its functionality with a more robust solution
-@router.post("/internal/process-expiry")
-async def process_invitation_expiry_legacy(
-    svc: EscrowService = Depends(get_service),
-):
-    """Legacy internal worker endpoint alias for invitation expiry processing."""
-    # SECURITY: unsecure route
-    count = await svc.process_expired_invitations()
-    return {"count": count}
-
-
-@router.post("/internal/process-invitation-expiry")
-async def process_invitation_expiry(
-    svc: EscrowService = Depends(get_service),
-):
-    """Internal worker endpoint: expire stale invitation-state escrows."""
-    # SECURITY: unsecure route
-    count = await svc.process_expired_invitations()
-    return {"count": count}
-
-
-@router.post("/internal/process-recurring")
-async def process_recurring_cycles(
-    svc: EscrowService = Depends(get_service),
-):
-    """Internal worker endpoint: process due recurring escrow cycles."""
-    # SECURITY: unsecure route
-    count = await svc.process_due_cycles()
-    return {"count": count}

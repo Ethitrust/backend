@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import uuid
 from typing import Annotated
@@ -52,9 +53,7 @@ async def get_current_user(
     try:
         user = await grpc_clients.validate_token(authorization.credentials)
     except PermissionError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 
     # kyc_level = await _enforce_kyc_or_raise(user["user_id"])
     # user["kyc_level"] = kyc_level
@@ -63,6 +62,38 @@ async def get_current_user(
 
 def get_service(db: AsyncSession = Depends(get_db)) -> NotificationService:
     return NotificationService(NotificationRepository(db))
+
+
+def _notification_metadata(notif: object) -> dict:
+    metadata_raw = getattr(notif, "metadata_", None)
+    if not isinstance(metadata_raw, str) or not metadata_raw.strip():
+        return {}
+
+    try:
+        parsed = json.loads(metadata_raw)
+    except json.JSONDecodeError:
+        return {}
+
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _to_notification_response(notif: object) -> NotificationResponse:
+    metadata = _notification_metadata(notif)
+    invitation_id = metadata.get("invitation_id") or metadata.get("escrow_id")
+    dispute_id = metadata.get("dispute_id")
+
+    return NotificationResponse(
+        id=notif.id,
+        user_id=notif.user_id,
+        type=notif.type,
+        title=notif.title,
+        body=notif.body,
+        invitation_id=invitation_id if isinstance(invitation_id, str) else None,
+        dispute_id=dispute_id if isinstance(dispute_id, str) else None,
+        is_read=notif.is_read,
+        created_at=notif.created_at,
+        read_at=notif.read_at,
+    )
 
 
 @router.get("", response_model=list[NotificationResponse])
@@ -74,7 +105,7 @@ async def list_notifications(
 ):
     user_id = uuid.UUID(current_user["user_id"])
     notifs = await svc.list_notifications(user_id, page, limit)
-    return [NotificationResponse.model_validate(n) for n in notifs]
+    return [_to_notification_response(n) for n in notifs]
 
 
 @router.patch("/{notif_id}/read", response_model=NotificationResponse)
@@ -86,10 +117,8 @@ async def mark_read(
     user_id = uuid.UUID(current_user["user_id"])
     notif = await svc.mark_read(notif_id, user_id)
     if notif is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found"
-        )
-    return NotificationResponse.model_validate(notif)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
+    return _to_notification_response(notif)
 
 
 @router.post("/read-all", status_code=status.HTTP_204_NO_CONTENT)

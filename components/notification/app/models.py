@@ -23,6 +23,8 @@ class NotificationResponse(BaseModel):
     type: str
     title: str
     body: str
+    invitation_id: Optional[str] = None
+    dispute_id: Optional[str] = None
     is_read: bool
     created_at: datetime
     read_at: Optional[datetime]

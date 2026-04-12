@@ -107,6 +107,24 @@ class EscrowRepository:
         )
         return list(result.scalars().all())
 
+    async def list_pending_unfunded_for_participant(
+        self,
+        user_id: uuid.UUID,
+    ) -> list[Escrow]:
+        result = await self.db.execute(
+            select(Escrow)
+            .where(
+                Escrow.status == "pending",
+                Escrow.funded_at.is_(None),
+                or_(
+                    Escrow.initiator_id == user_id,
+                    Escrow.receiver_id == user_id,
+                ),
+            )
+            .order_by(Escrow.created_at.asc())
+        )
+        return list(result.scalars().all())
+
     async def create_counter_offer(self, **kwargs) -> CounterOffer:
         counter_offer = CounterOffer(**kwargs)
         self.db.add(counter_offer)

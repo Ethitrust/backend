@@ -40,9 +40,7 @@ async def client(db: AsyncSession):
         yield db
 
     app.dependency_overrides[get_db] = _override_get_db
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as ac:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
     app.dependency_overrides.clear()
 
@@ -202,16 +200,24 @@ def mock_dispute_clients(monkeypatch):
             }
         ]
     )
+    get_escrow_mock = AsyncMock(
+        return_value={
+            "escrow_id": escrow_id,
+            "status": "disputed",
+            "escrow_type": "onetime",
+            "initiator_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "receiver_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+            "amount": 450000,
+            "currency": "ETB",
+        }
+    )
 
     monkeypatch.setattr("app.grpc_clients.list_disputes", list_mock)
     monkeypatch.setattr("app.grpc_clients.mark_dispute_under_review", review_mock)
-    monkeypatch.setattr(
-        "app.grpc_clients.request_dispute_resolution", request_resolution_mock
-    )
-    monkeypatch.setattr(
-        "app.grpc_clients.execute_dispute_resolution", execute_resolution_mock
-    )
+    monkeypatch.setattr("app.grpc_clients.request_dispute_resolution", request_resolution_mock)
+    monkeypatch.setattr("app.grpc_clients.execute_dispute_resolution", execute_resolution_mock)
     monkeypatch.setattr("app.grpc_clients.refund_fee_for_escrow", refund_fee_mock)
+    monkeypatch.setattr("app.grpc_clients.get_escrow", get_escrow_mock)
 
     return {
         "list_disputes": list_mock,
@@ -219,6 +225,7 @@ def mock_dispute_clients(monkeypatch):
         "request_dispute_resolution": request_resolution_mock,
         "execute_dispute_resolution": execute_resolution_mock,
         "refund_fee_for_escrow": refund_fee_mock,
+        "get_escrow": get_escrow_mock,
     }
 
 

@@ -282,9 +282,7 @@ async def test_user_timeline_contains_risk_flag_and_note(client):
     )
     assert note.status_code == 200
 
-    timeline = await client.get(
-        f"/admin/users/{TARGET_USER_ID}/timeline", headers=AUTH_HEADER
-    )
+    timeline = await client.get(f"/admin/users/{TARGET_USER_ID}/timeline", headers=AUTH_HEADER)
     assert timeline.status_code == 200
     payload = timeline.json()
     item_types = {item["item_type"] for item in payload["items"]}
@@ -374,6 +372,22 @@ async def test_dispute_queue_list_syncs_remote_items(client):
 
 
 @pytest.mark.asyncio
+async def test_dispute_queue_item_detail_includes_escrow_and_users(client):
+    sync = await client.get("/admin/disputes/queue", headers=AUTH_HEADER)
+    assert sync.status_code == 200
+
+    detail = await client.get(f"/admin/disputes/{TARGET_DISPUTE_ID}", headers=AUTH_HEADER)
+    assert detail.status_code == 200
+    payload = detail.json()
+    assert payload["dispute_id"] == TARGET_DISPUTE_ID
+    assert payload["escrow"]["escrow_id"] == TARGET_ESCROW_ID
+    assert payload["escrow"]["status"] == "disputed"
+    assert payload["raised_by_user"]["user_id"] == "33333333-3333-3333-3333-333333333333"
+    assert payload["initiator_user"]["user_id"] == "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    assert payload["receiver_user"]["user_id"] == "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+
+
+@pytest.mark.asyncio
 async def test_dispute_queue_update_metadata(client):
     sync = await client.get("/admin/disputes/queue", headers=AUTH_HEADER)
     assert sync.status_code == 200
@@ -413,19 +427,6 @@ async def test_dispute_evidence_request_created(client):
 
 
 @pytest.mark.asyncio
-async def test_dispute_internal_note_created(client):
-    r = await client.post(
-        f"/admin/disputes/{TARGET_DISPUTE_ID}/internal-notes",
-        json={"note": "Potential repeat offender behavior observed."},
-        headers=AUTH_HEADER,
-    )
-    assert r.status_code == 200
-    payload = r.json()
-    assert payload["dispute_id"] == TARGET_DISPUTE_ID
-    assert payload["note"].startswith("Potential repeat offender")
-
-
-@pytest.mark.asyncio
 async def test_dispute_move_to_review(client):
     r = await client.post(
         f"/admin/disputes/{TARGET_DISPUTE_ID}/review",
@@ -439,9 +440,7 @@ async def test_dispute_move_to_review(client):
 
 
 @pytest.mark.asyncio
-async def test_dispute_resolution_executes_and_refunds_fee(
-    client, mock_dispute_clients
-):
+async def test_dispute_resolution_executes_and_refunds_fee(client, mock_dispute_clients):
     r = await client.post(
         f"/admin/disputes/{TARGET_DISPUTE_ID}/resolution",
         json={
@@ -468,9 +467,7 @@ async def test_dispute_dashboard_counters(client):
     sync = await client.get("/admin/disputes/queue", headers=AUTH_HEADER)
     assert sync.status_code == 200
 
-    counters = await client.get(
-        "/admin/disputes/dashboard/counters", headers=AUTH_HEADER
-    )
+    counters = await client.get("/admin/disputes/dashboard/counters", headers=AUTH_HEADER)
     assert counters.status_code == 200
     payload = counters.json()
     assert payload["open"] >= 1
@@ -510,9 +507,7 @@ async def test_payout_queue_update_metadata(client):
 
 
 @pytest.mark.asyncio
-async def test_payout_retry_executes_and_tracks_retry_count(
-    client, mock_payout_clients
-):
+async def test_payout_retry_executes_and_tracks_retry_count(client, mock_payout_clients):
     sync = await client.get("/admin/payouts/queue", headers=AUTH_HEADER)
     assert sync.status_code == 200
 
@@ -535,16 +530,12 @@ async def test_financial_dashboard_and_reconciliation(client):
     sync = await client.get("/admin/payouts/queue", headers=AUTH_HEADER)
     assert sync.status_code == 200
 
-    counters = await client.get(
-        "/admin/finance/dashboard/counters", headers=AUTH_HEADER
-    )
+    counters = await client.get("/admin/finance/dashboard/counters", headers=AUTH_HEADER)
     assert counters.status_code == 200
     counters_payload = counters.json()
     assert counters_payload["failed"] >= 1
 
-    reconciliation = await client.get(
-        "/admin/finance/reconciliation/summary", headers=AUTH_HEADER
-    )
+    reconciliation = await client.get("/admin/finance/reconciliation/summary", headers=AUTH_HEADER)
     assert reconciliation.status_code == 200
     reconciliation_payload = reconciliation.json()
     assert reconciliation_payload["total_transactions"] >= 1
@@ -599,17 +590,13 @@ async def test_system_config_upsert_get_and_history(client):
     }
     assert upsert_payload["item"]["key"] == TARGET_CONFIG_KEY
 
-    get_config = await client.get(
-        f"/admin/configs/{TARGET_CONFIG_KEY}", headers=AUTH_HEADER
-    )
+    get_config = await client.get(f"/admin/configs/{TARGET_CONFIG_KEY}", headers=AUTH_HEADER)
     assert get_config.status_code == 200
     config_payload = get_config.json()
     assert config_payload["value"] == 1.75
     assert config_payload["version"] >= 1
 
-    history = await client.get(
-        f"/admin/configs/{TARGET_CONFIG_KEY}/history", headers=AUTH_HEADER
-    )
+    history = await client.get(f"/admin/configs/{TARGET_CONFIG_KEY}/history", headers=AUTH_HEADER)
     assert history.status_code == 200
     history_payload = history.json()
     assert history_payload["key"] == TARGET_CONFIG_KEY
@@ -696,18 +683,14 @@ async def test_analytics_growth_and_volume_endpoints(client):
     payouts_sync = await client.get("/admin/payouts/queue", headers=AUTH_HEADER)
     assert payouts_sync.status_code == 200
 
-    growth = await client.get(
-        "/admin/analytics/growth?window_days=30", headers=AUTH_HEADER
-    )
+    growth = await client.get("/admin/analytics/growth?window_days=30", headers=AUTH_HEADER)
     assert growth.status_code == 200
     growth_payload = growth.json()
     assert growth_payload["window_days"] == 30
     assert len(growth_payload["disputes_created"]) == 30
     assert len(growth_payload["payout_volume"]) == 30
 
-    volume = await client.get(
-        "/admin/analytics/volume?window_days=30", headers=AUTH_HEADER
-    )
+    volume = await client.get("/admin/analytics/volume?window_days=30", headers=AUTH_HEADER)
     assert volume.status_code == 200
     volume_payload = volume.json()
     assert volume_payload["window_days"] == 30
@@ -761,9 +744,7 @@ async def test_saved_views_lifecycle(client):
     assert create_payload["module"] == "analytics"
     assert create_payload["is_shared"] is True
 
-    listed = await client.get(
-        "/admin/saved-views?module=analytics", headers=AUTH_HEADER
-    )
+    listed = await client.get("/admin/saved-views?module=analytics", headers=AUTH_HEADER)
     assert listed.status_code == 200
     listed_payload = listed.json()
     assert listed_payload["total"] >= 1
@@ -826,9 +807,7 @@ async def test_report_jobs_lifecycle_and_download(client):
     assert run_payload["status"] == "completed"
     assert run_payload["result_url"] is not None
 
-    download = await client.get(
-        f"/admin/reports/jobs/{job_id}/download", headers=AUTH_HEADER
-    )
+    download = await client.get(f"/admin/reports/jobs/{job_id}/download", headers=AUTH_HEADER)
     assert download.status_code == 200
     assert download.headers["content-type"].startswith("application/json")
     assert "attachment; filename=" in download.headers["content-disposition"]

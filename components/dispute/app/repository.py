@@ -79,3 +79,22 @@ class DisputeRepository:
         rows = await self.db.execute(query)
         count_res = await self.db.execute(count_query)
         return list(rows.scalars().all()), int(count_res.scalar_one() or 0)
+
+    async def list_disputes_by_raiser(
+        self,
+        raised_by: uuid.UUID,
+        status_filter: str | None,
+        offset: int,
+        limit: int,
+    ) -> tuple[list[Dispute], int]:
+        query = select(Dispute).where(Dispute.raised_by == raised_by)
+        count_query = select(func.count(Dispute.id)).where(Dispute.raised_by == raised_by)
+
+        if status_filter:
+            query = query.where(Dispute.status == status_filter)
+            count_query = count_query.where(Dispute.status == status_filter)
+
+        query = query.order_by(Dispute.created_at.desc()).offset(offset).limit(limit)
+        rows = await self.db.execute(query)
+        count_res = await self.db.execute(count_query)
+        return list(rows.scalars().all()), int(count_res.scalar_one() or 0)

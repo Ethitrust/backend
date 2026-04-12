@@ -37,9 +37,7 @@ async def validate_token(token: str) -> dict:
     try:
         async with grpc.aio.insecure_channel(AUTH_GRPC) as channel:
             stub = auth_pb2_grpc.AuthValidatorStub(channel)
-            response = await stub.ValidateToken(
-                auth_pb2.TokenRequest(token=token), timeout=5.0
-            )
+            response = await stub.ValidateToken(auth_pb2.TokenRequest(token=token), timeout=5.0)
     except grpc.aio.AioRpcError as exc:
         raise PermissionError("Invalid token") from exc
 
@@ -93,12 +91,16 @@ async def get_escrow(escrow_id: uuid.UUID) -> dict:
     }
 
 
-async def transition_escrow_status(escrow_id: uuid.UUID, new_status: str) -> dict:
+async def transition_escrow_status(
+    escrow_id: uuid.UUID,
+    new_status: str,
+    actor_id: str = "dispute-service",
+) -> dict:
     """Call Escrow service to change escrow status."""
     request = escrow_pb2.TransitionRequest(
         escrow_id=str(escrow_id),
         new_status=new_status,
-        actor_id="dispute-service",
+        actor_id=actor_id,
     )
     try:
         async with grpc.aio.insecure_channel(ESCROW_GRPC) as channel:

@@ -495,12 +495,8 @@ async def test_resend_invitation_email_based(client):
 
 
 @pytest.mark.asyncio
-async def test_precheck_invitation_returns_login_when_account_exists(
-    client, monkeypatch
-):
-    monkeypatch.setattr(
-        "app.service._generate_invite_token", lambda: "known-invite-token"
-    )
+async def test_precheck_invitation_returns_login_when_account_exists(client, monkeypatch):
+    monkeypatch.setattr("app.service._generate_invite_token", lambda: "known-invite-token")
     monkeypatch.setattr(
         "app.grpc_clients.get_user_by_email",
         AsyncMock(return_value=None),
@@ -530,9 +526,7 @@ async def test_precheck_invitation_returns_login_when_account_exists(
 
 @pytest.mark.asyncio
 async def test_precheck_invitation_invalid_token_returns_403(client, monkeypatch):
-    monkeypatch.setattr(
-        "app.service._generate_invite_token", lambda: "known-invite-token"
-    )
+    monkeypatch.setattr("app.service._generate_invite_token", lambda: "known-invite-token")
     payload = {
         "escrow_type": "onetime",
         "title": "Invalid token precheck",
@@ -553,19 +547,17 @@ async def test_precheck_invitation_invalid_token_returns_403(client, monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_org_scoped_create_requires_org_api_key(client):
+async def test_org_scoped_route_requires_org_api_key(client):
     payload = {
         "escrow_type": "onetime",
         "title": "Org scoped invite",
         "currency": "ETB",
         "amount": 66_000,
         "initiator_role": "seller",
-        "seller_type": "organization",
-        "org_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
         "receiver_id": "33333333-3333-4333-8333-33333333333c",
     }
-    create_resp = await client.post("/escrow", json=payload, headers=AUTH_HEADER)
-    assert create_resp.status_code == 403
+    create_resp = await client.post("/escrow/organization", json=payload, headers=AUTH_HEADER)
+    assert create_resp.status_code == 422
 
 
 @pytest.mark.asyncio
@@ -576,8 +568,6 @@ async def test_org_scoped_create_succeeds_with_org_api_key(client):
         "currency": "ETB",
         "amount": 66_000,
         "initiator_role": "seller",
-        "seller_type": "organization",
-        "org_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
         "receiver_id": "22222222-2222-4222-8222-22222222222b",
     }
     create_resp = await client.post("/escrow", json=payload, headers=ORG_KEY_HEADER)
@@ -586,6 +576,58 @@ async def test_org_scoped_create_succeeds_with_org_api_key(client):
     assert created["initiator_actor_type"] == "organization"
     assert created["initiator_org_id"] == "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
     assert created["initiator_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_org_scoped_create_succeeds_with_secret_key_route(client):
+    payload = {
+        "escrow_type": "onetime",
+        "title": "Org header route create",
+        "currency": "ETB",
+        "amount": 78_000,
+        "initiator_role": "seller",
+        "receiver_id": "22222222-2222-4222-8222-22222222222b",
+    }
+    create_resp = await client.post(
+        "/escrow/organization",
+        json=payload,
+        headers={"X-Org-Secret-Key": "sk_test_org_key"},
+    )
+    assert create_resp.status_code == 201, create_resp.text
+    created = create_resp.json()["escrow"]
+    assert created["initiator_actor_type"] == "organization"
+    assert created["initiator_org_id"] == "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    assert created["initiator_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_org_secret_key_route_allows_individual_seller_payload(client):
+    payload = {
+        "escrow_type": "onetime",
+        "title": "Website redesign",
+        "description": "Payment held until final UI and handoff are delivered",
+        "receiver_email": "nahom.network@gmail.com",
+        "initiator_role": "buyer",
+        "currency": "ETB",
+        "amount": 50,
+        "acceptance_criteria": "Design files, source code, and documentation delivered",
+        "inspection_period": 72,
+        "dispute_window": 48,
+        "how_dispute_handled": "platform",
+        "who_pays_fees": "buyer",
+    }
+    create_resp = await client.post(
+        "/escrow/organization",
+        json=payload,
+        headers={"X-Org-Secret-Key": "sk_test_org_key"},
+    )
+    assert create_resp.status_code == 201, create_resp.text
+    created = create_resp.json()["escrow"]
+    assert created["initiator_actor_type"] == "organization"
+    assert created["initiator_org_id"] == "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    assert created["initiator_id"] is None
+    assert created["title"] == "Website redesign"
+    assert created["amount"] == 50
 
 
 @pytest.mark.asyncio
@@ -611,25 +653,21 @@ async def test_org_api_key_forbidden_on_invitation_response_endpoint(client):
 
 
 @pytest.mark.asyncio
-async def test_org_seller_payload_rejects_buyer_initiator_role(client):
+async def test_user_route_buyer_role_payload_is_valid_without_org_field(client):
     payload = {
         "escrow_type": "onetime",
         "title": "Invalid org buyer role",
         "currency": "ETB",
         "amount": 12_000,
         "initiator_role": "buyer",
-        "seller_type": "organization",
-        "org_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
         "receiver_id": "22222222-2222-4222-8222-22222222222b",
     }
     response = await client.post("/escrow", json=payload, headers=AUTH_HEADER)
-    assert response.status_code == 422
+    assert response.status_code == 201
 
 
 @pytest.mark.asyncio
-async def test_onetime_rejects_receiver_when_receiver_is_organization(
-    client, monkeypatch
-):
+async def test_onetime_rejects_receiver_when_receiver_is_organization(client, monkeypatch):
     monkeypatch.setattr(
         "app.grpc_clients.check_organization_exists",
         AsyncMock(return_value=True),
@@ -648,9 +686,7 @@ async def test_onetime_rejects_receiver_when_receiver_is_organization(
 
 
 @pytest.mark.asyncio
-async def test_milestone_rejects_receiver_when_receiver_is_organization(
-    client, monkeypatch
-):
+async def test_milestone_rejects_receiver_when_receiver_is_organization(client, monkeypatch):
     monkeypatch.setattr(
         "app.grpc_clients.check_organization_exists",
         AsyncMock(return_value=True),
@@ -673,9 +709,7 @@ async def test_milestone_rejects_receiver_when_receiver_is_organization(
 
 
 @pytest.mark.asyncio
-async def test_recurring_rejects_receiver_when_receiver_is_organization(
-    client, monkeypatch
-):
+async def test_recurring_rejects_receiver_when_receiver_is_organization(client, monkeypatch):
     monkeypatch.setattr(
         "app.grpc_clients.check_organization_exists",
         AsyncMock(return_value=True),

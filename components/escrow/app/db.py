@@ -42,9 +42,7 @@ DATABASE_URL = os.getenv(
 )
 
 engine = create_async_engine(DATABASE_URL, echo=False)
-async_session_factory = async_sessionmaker(
-    engine, class_=AsyncSession, expire_on_commit=False
-)
+async_session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
 class Base(DeclarativeBase):
@@ -101,9 +99,7 @@ class Escrow(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         pg.UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    transaction_ref: Mapped[str] = mapped_column(
-        String(255), unique=True, nullable=False
-    )
+    transaction_ref: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     escrow_type: Mapped[str] = mapped_column(String(30), nullable=False)
     status: Mapped[
         Literal[
@@ -129,13 +125,9 @@ class Escrow(Base):
     initiator_org_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         pg.UUID(as_uuid=True), nullable=True, index=True
     )
-    receiver_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        pg.UUID(as_uuid=True), nullable=True
-    )
+    receiver_id: Mapped[Optional[uuid.UUID]] = mapped_column(pg.UUID(as_uuid=True), nullable=True)
     receiver_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    initiator_role: Mapped[str] = mapped_column(
-        String(20), default="buyer", nullable=False
-    )
+    initiator_role: Mapped[str] = mapped_column(String(20), default="buyer", nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     currency: Mapped[str] = mapped_column(String(10), nullable=False)
@@ -162,10 +154,7 @@ class Escrow(Base):
     who_pays_fees: Mapped[Literal["buyer", "seller", "split"]] = mapped_column(
         String(10), default="buyer", nullable=False
     )
-    provider: Mapped[str] = mapped_column(String(50), default="chapa", nullable=False)
-    org_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        pg.UUID(as_uuid=True), nullable=True
-    )
+    org_id: Mapped[Optional[uuid.UUID]] = mapped_column(pg.UUID(as_uuid=True), nullable=True)
     invite_token_hash: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     invite_expires_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -183,9 +172,7 @@ class Escrow(Base):
             "rejected",
         ]
     ] = mapped_column(String(30), default="none", nullable=False)
-    active_counter_offer_version: Mapped[Optional[int]] = mapped_column(
-        Integer, nullable=True
-    )
+    active_counter_offer_version: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     last_countered_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         pg.UUID(as_uuid=True), nullable=True
     )
@@ -198,16 +185,9 @@ class Escrow(Base):
     receiver_accepted_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    is_test: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    funded_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    completed_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    cancelled_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    funded_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -217,11 +197,6 @@ class Escrow(Base):
         onupdate=func.now(),
         nullable=False,
     )
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Milestone
-# ─────────────────────────────────────────────────────────────────────────────
 
 
 class Milestone(Base):
@@ -245,23 +220,17 @@ class Milestone(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     amount: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    due_date: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    due_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     inspection_hrs: Mapped[int] = mapped_column(
         Integer,
         default=DEFAULT_MILESTONE_INSPECTION_HOURS,
         nullable=False,
     )
-    status: Mapped[
-        Literal["pending", "in_progress", "delivered", "completed", "disputed"]
-    ] = mapped_column(String(30), default="pending", nullable=False)
-    delivered_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
+    status: Mapped[Literal["pending", "in_progress", "delivered", "completed", "disputed"]] = (
+        mapped_column(String(30), default="pending", nullable=False)
     )
-    completed_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    delivered_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
 
@@ -284,25 +253,19 @@ class CounterOffer(Base):
         index=True,
     )
     offer_version: Mapped[int] = mapped_column(Integer, nullable=False)
-    proposed_by_user_id: Mapped[uuid.UUID] = mapped_column(
-        pg.UUID(as_uuid=True), nullable=False
-    )
-    proposed_to_user_id: Mapped[uuid.UUID] = mapped_column(
-        pg.UUID(as_uuid=True), nullable=False
-    )
-    status: Mapped[
-        Literal["pending_response", "accepted", "rejected", "countered_again"]
-    ] = mapped_column(
-        String(30),
-        default="pending_response",
-        nullable=False,
+    proposed_by_user_id: Mapped[uuid.UUID] = mapped_column(pg.UUID(as_uuid=True), nullable=False)
+    proposed_to_user_id: Mapped[uuid.UUID] = mapped_column(pg.UUID(as_uuid=True), nullable=False)
+    status: Mapped[Literal["pending_response", "accepted", "rejected", "countered_again"]] = (
+        mapped_column(
+            String(30),
+            default="pending_response",
+            nullable=False,
+        )
     )
     responded_by_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         pg.UUID(as_uuid=True), nullable=True
     )
-    responded_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    responded_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -353,9 +316,7 @@ class RecurringCycle(Base):
     )
     due_day_of_month: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     expected_amount: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    due_date: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    due_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     min_contributors: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     max_contributors: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     status: Mapped[Literal["pending", "active", "completed"]] = mapped_column(
@@ -380,15 +341,11 @@ class RecurringContributor(Base):
         nullable=False,
         index=True,
     )
-    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        pg.UUID(as_uuid=True), nullable=True
-    )
+    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(pg.UUID(as_uuid=True), nullable=True)
     name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     expected_amount: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    paid_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     joined_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

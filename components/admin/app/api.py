@@ -87,9 +87,7 @@ async def get_current_user(
     try:
         user = await grpc_clients.validate_token(authorization.credentials)
     except PermissionError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 
     user = dict(user)
     user["token"] = authorization.credentials
@@ -102,9 +100,7 @@ def require_scope(required_scope: str):
             role = current_user.get("role", "unknown")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=(
-                    f"Missing required scope '{required_scope}' for role '{role}'."
-                ),
+                detail=(f"Missing required scope '{required_scope}' for role '{role}'."),
             )
         return current_user
 
@@ -263,6 +259,19 @@ async def list_dispute_queue(
         status_filter=status_filter,
         assignee_id=assignee_id,
         priority=priority,
+    )
+
+
+@router.get("/disputes/{dispute_id}", response_model=DisputeQueueItem)
+async def get_dispute_queue_item(
+    dispute_id: uuid.UUID,
+    current_user: dict = Depends(require_scope("disputes.queue.read")),
+    svc: AdminService = Depends(get_service),
+):
+    """Get one dispute queue item enriched with escrow and participant details."""
+    return await svc.get_dispute_queue_item_detail(
+        dispute_id=dispute_id,
+        token=str(current_user["token"]),
     )
 
 
@@ -674,9 +683,7 @@ async def upsert_system_config(
     )
 
 
-@router.post(
-    "/configs/{config_key}/rollback", response_model=SystemConfigMutationResponse
-)
+@router.post("/configs/{config_key}/rollback", response_model=SystemConfigMutationResponse)
 async def rollback_system_config(
     config_key: str,
     body: SystemConfigRollbackRequest,

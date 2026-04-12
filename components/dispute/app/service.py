@@ -30,6 +30,73 @@ class DisputeService:
         self.repo = repo
 
     @staticmethod
+    async def _resolve_notification_participants(
+        escrow_id: uuid.UUID,
+        fallback_user_ids: list[str] | None = None,
+    ) -> list[str]:
+        participant_ids: list[str] = []
+        try:
+            escrow = await grpc_clients.get_escrow(escrow_id)
+            participant_ids = DisputeService._participant_user_ids(escrow)
+        except RuntimeError:
+            logger.exception(
+                "dispute.notification.participants.fetch_failed escrow_id=%s",
+                escrow_id,
+            )
+
+        for fallback_user_id in fallback_user_ids or []:
+            normalized = fallback_user_id.strip()
+            if normalized and normalized not in participant_ids:
+                participant_ids.append(normalized)
+
+        return participant_ids
+
+    @staticmethod
+    async def _publish_to_participants(
+        routing_key: str,
+        participant_ids: list[str],
+        payload: dict,
+        actor_user_id: uuid.UUID | None = None,
+    ) -> None:
+        actor_user_id_str = str(actor_user_id) if actor_user_id else None
+        for participant_id in participant_ids:
+            event_payload = {
+                **payload,
+                "user_id": participant_id,
+            }
+            if actor_user_id_str:
+                event_payload["actor_user_id"] = actor_user_id_str
+            await publish(routing_key, event_payload)
+
+    @staticmethod
+    async def _get_escrow_or_raise(escrow_id: uuid.UUID) -> dict:
+        try:
+            return await grpc_clients.get_escrow(escrow_id)
+        except RuntimeError as exc:
+            error_text = str(exc)
+            if "not found" in error_text.lower():
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Escrow not found",
+                ) from exc
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Unable to fetch escrow",
+            ) from exc
+
+    @staticmethod
+    def _participant_user_ids(escrow: dict) -> list[str]:
+        participant_ids: list[str] = []
+        for key in ("initiator_id", "receiver_id"):
+            value = escrow.get(key)
+            if not isinstance(value, str):
+                continue
+            normalized = value.strip()
+            if normalized and normalized not in participant_ids:
+                participant_ids.append(normalized)
+        return participant_ids
+
+    @staticmethod
     def _is_admin_or_moderator(role: str) -> bool:
         return role in MODERATOR_ROLES
 
@@ -63,7 +130,7 @@ class DisputeService:
         actor_role: str = "user",
     ) -> Dispute:
         # Verify escrow exists and is active
-        escrow = await grpc_clients.get_escrow(escrow_id)
+        escrow = await self._get_escrow_or_raise(escrow_id)
         if escrow.get("status") != "active":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -79,8 +146,24 @@ class DisputeService:
                 detail="Dispute already exists for this escrow",
             )
 
-        # Transition escrow to disputed
-        await grpc_clients.transition_escrow_status(escrow_id, "disputed")
+        # Transition escrow to disputed with the real participant actor.
+        try:
+            await grpc_clients.transition_escrow_status(
+                escrow_id,
+                "disputed",
+                actor_id=str(user_id),
+            )
+        except RuntimeError as exc:
+            error_text = str(exc)
+            if "cannot transition" in error_text.lower():
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=error_text,
+                ) from exc
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Unable to update escrow status to disputed",
+            ) from exc
 
         dispute = Dispute(
             escrow_id=escrow_id,
@@ -90,14 +173,16 @@ class DisputeService:
             status="open",
         )
         dispute = await self.repo.create(dispute)
-        await publish(
+        await self._publish_to_participants(
             "dispute.opened",
+            self._participant_user_ids(escrow),
             {
                 "dispute_id": str(dispute.id),
                 "escrow_id": str(escrow_id),
                 "raised_by": str(user_id),
                 "reason": data.reason,
             },
+            actor_user_id=user_id,
         )
         return dispute
 
@@ -114,7 +199,7 @@ class DisputeService:
                 detail="No dispute found for this escrow",
             )
 
-        escrow = await grpc_clients.get_escrow(escrow_id)
+        escrow = await self._get_escrow_or_raise(escrow_id)
         self._assert_can_view_or_mutate_dispute(escrow, user_id, actor_role)
 
         evidence = await self.repo.list_evidence(dispute.id)
@@ -131,11 +216,9 @@ class DisputeService:
     ) -> DisputeEvidence:
         dispute = await self.repo.get_by_id(dispute_id)
         if dispute is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Dispute not found"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dispute not found")
 
-        escrow = await grpc_clients.get_escrow(dispute.escrow_id)
+        escrow = await self._get_escrow_or_raise(dispute.escrow_id)
         self._assert_can_view_or_mutate_dispute(escrow, user_id, actor_role)
 
         evidence = DisputeEvidence(
@@ -145,7 +228,22 @@ class DisputeService:
             file_type=file_type,
             description=description,
         )
-        return await self.repo.add_evidence(evidence)
+        evidence = await self.repo.add_evidence(evidence)
+
+        await self._publish_to_participants(
+            "dispute.evidence.added",
+            self._participant_user_ids(escrow),
+            {
+                "dispute_id": str(dispute_id),
+                "escrow_id": str(dispute.escrow_id),
+                "added_by": str(user_id),
+                "file_type": file_type,
+                "description": description,
+            },
+            actor_user_id=user_id,
+        )
+
+        return evidence
 
     async def resolve_dispute(
         self,
@@ -162,9 +260,7 @@ class DisputeService:
 
         dispute = await self.repo.get_by_id(dispute_id)
         if dispute is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Dispute not found"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dispute not found")
         if dispute.status not in RESOLVABLE_STATUSES:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -178,14 +274,20 @@ class DisputeService:
             resolution_note=data.resolution_note,
         )
 
-        await publish(
+        participant_ids = await self._resolve_notification_participants(
+            dispute.escrow_id,
+            fallback_user_ids=[str(dispute.raised_by)],
+        )
+        await self._publish_to_participants(
             "dispute.resolution.requested",
+            participant_ids,
             {
                 "dispute_id": str(dispute_id),
                 "resolution": data.resolution,
                 "escrow_id": str(dispute.escrow_id),
                 "decided_by": str(admin_id),
             },
+            actor_user_id=admin_id,
         )
         return dispute
 
@@ -219,10 +321,7 @@ class DisputeService:
             )
             return dispute
 
-        if (
-            dispute.status in FINAL_RESOLUTION_STATUSES
-            and dispute.status != final_status
-        ):
+        if dispute.status in FINAL_RESOLUTION_STATUSES and dispute.status != final_status:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Dispute already resolved with a different outcome",
@@ -253,14 +352,20 @@ class DisputeService:
             final_status,
             resolved_by=admin_id,
         )
-        await publish(
+        participant_ids = await self._resolve_notification_participants(
+            dispute.escrow_id,
+            fallback_user_ids=[str(dispute.raised_by)],
+        )
+        await self._publish_to_participants(
             "dispute.resolved",
+            participant_ids,
             {
                 "dispute_id": str(dispute_id),
                 "resolution": resolution,
                 "escrow_id": str(dispute.escrow_id),
                 "resolved_by": str(admin_id) if admin_id else None,
             },
+            actor_user_id=admin_id,
         )
         return dispute
 
@@ -295,14 +400,20 @@ class DisputeService:
             resolution_note=note,
             resolved_by=None,
         )
-        await publish(
+        participant_ids = await self._resolve_notification_participants(
+            dispute.escrow_id,
+            fallback_user_ids=[str(dispute.raised_by)],
+        )
+        await self._publish_to_participants(
             "dispute.under_review",
+            participant_ids,
             {
                 "dispute_id": str(dispute_id),
                 "escrow_id": str(dispute.escrow_id),
                 "reviewed_by": str(moderator_id),
                 "note": note,
             },
+            actor_user_id=moderator_id,
         )
         return dispute
 
@@ -330,13 +441,19 @@ class DisputeService:
 
         dispute = await self.repo.update_status(dispute_id, "cancelled")
         await grpc_clients.transition_escrow_status(dispute.escrow_id, "active")
-        await publish(
+        participant_ids = await self._resolve_notification_participants(
+            dispute.escrow_id,
+            fallback_user_ids=[str(dispute.raised_by)],
+        )
+        await self._publish_to_participants(
             "dispute.cancelled",
+            participant_ids,
             {
                 "dispute_id": str(dispute_id),
                 "escrow_id": str(dispute.escrow_id),
                 "cancelled_by": str(requester_id),
             },
+            actor_user_id=requester_id,
         )
         return dispute
 
@@ -355,6 +472,29 @@ class DisputeService:
 
         offset = (page - 1) * limit
         items, total = await self.repo.list_disputes(status_filter, offset, limit)
+        pages = ceil(total / limit) if limit else 1
+        return {
+            "items": items,
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "pages": pages,
+        }
+
+    async def list_my_disputes(
+        self,
+        user_id: uuid.UUID,
+        status_filter: str | None,
+        page: int,
+        limit: int,
+    ) -> dict:
+        offset = (page - 1) * limit
+        items, total = await self.repo.list_disputes_by_raiser(
+            raised_by=user_id,
+            status_filter=status_filter,
+            offset=offset,
+            limit=limit,
+        )
         pages = ceil(total / limit) if limit else 1
         return {
             "items": items,

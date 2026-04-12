@@ -138,9 +138,7 @@ class TestLockFunds:
             escrow_id=escrow_id,
         )
 
-        repo.update_balance.assert_called_once_with(
-            wallet.id, balance_delta=-500, locked_delta=500
-        )
+        repo.update_balance.assert_called_once_with(wallet.id, balance_delta=-500, locked_delta=500)
         repo.save_wallet_lock.assert_called_once()
         saved_lock = repo.save_wallet_lock.call_args[0][0]
         assert isinstance(saved_lock, WalletLock)
@@ -187,6 +185,7 @@ class TestReleaseFunds:
         repo = MagicMock()
         # get_by_id returns sender first, then recipient
         repo.get_by_id = AsyncMock(side_effect=[sender, recipient])
+        repo.get_transaction_by_reference = AsyncMock(return_value=None)
         repo.get_active_lock = AsyncMock(return_value=lock)
         repo.update_balance = AsyncMock(return_value=sender)
         repo.mark_lock_status = AsyncMock(return_value=lock)
@@ -213,6 +212,8 @@ class TestReleaseFunds:
         second_call = repo.update_balance.call_args_list[1]
         assert second_call.kwargs["balance_delta"] == 500
         assert second_call.kwargs["locked_delta"] == 0
+        saved_tx = repo.save_transaction.call_args[0][0]
+        assert saved_tx.reference == "ref-release-001:capture"
 
     @pytest.mark.asyncio
     async def test_release_funds_insufficient_locked_raises_400(self):
@@ -231,6 +232,7 @@ class TestReleaseFunds:
         )
 
         repo = MagicMock()
+        repo.get_transaction_by_reference = AsyncMock(return_value=None)
         repo.get_active_lock = AsyncMock(return_value=lock)
         repo.get_by_id = AsyncMock(side_effect=[sender, recipient])
         repo.update_balance = AsyncMock()
@@ -250,6 +252,87 @@ class TestReleaseFunds:
             )
         assert exc_info.value.status_code == 400
 
+    @pytest.mark.asyncio
+    async def test_release_funds_retry_returns_existing_capture_transaction(self):
+        escrow_id = uuid.uuid4()
+        sender = _make_wallet(balance=0, locked_balance=500)
+        recipient = _make_wallet(balance=0)
+        existing_tx = _make_transaction(
+            wallet_id=sender.id,
+            escrow_id=escrow_id,
+            type="escrow_release",
+            amount=500,
+            currency="ETB",
+            status="success",
+            reference="ref-retry:capture",
+            provider="internal",
+        )
+
+        repo = MagicMock()
+        repo.get_transaction_by_reference = AsyncMock(return_value=existing_tx)
+        repo.get_active_lock = AsyncMock()
+        repo.get_by_id = AsyncMock()
+        repo.update_balance = AsyncMock()
+        repo.mark_lock_status = AsyncMock()
+        repo.save_transaction = AsyncMock()
+
+        svc = WalletService(repo)
+        tx = await svc.release_funds(
+            sender.id,
+            recipient.id,
+            500,
+            "ref-retry",
+            escrow_id=escrow_id,
+            reason="ESCROW",
+            source_type="ESCROW",
+            source_id=escrow_id,
+        )
+
+        assert tx is existing_tx
+        repo.get_transaction_by_reference.assert_awaited_once_with("ref-retry:capture")
+        repo.get_active_lock.assert_not_called()
+        repo.update_balance.assert_not_called()
+        repo.save_transaction.assert_not_called()
+
+
+class TestUnlockFunds:
+    @pytest.mark.asyncio
+    async def test_unlock_funds_uses_operation_specific_reference(self):
+        escrow_id = uuid.uuid4()
+        wallet = _make_wallet(balance=0, locked_balance=500)
+        lock = WalletLock(
+            wallet_id=wallet.id,
+            amount=500,
+            currency="ETB",
+            reason="ESCROW",
+            source_type="ESCROW",
+            source_id=escrow_id,
+            reference="ref-unlock-001",
+            status="locked",
+        )
+
+        repo = MagicMock()
+        repo.get_transaction_by_reference = AsyncMock(return_value=None)
+        repo.get_active_lock = AsyncMock(return_value=lock)
+        repo.get_by_id = AsyncMock(return_value=wallet)
+        repo.update_balance = AsyncMock(return_value=wallet)
+        repo.mark_lock_status = AsyncMock(return_value=lock)
+        repo.save_transaction = AsyncMock(side_effect=lambda tx: tx)
+
+        svc = WalletService(repo)
+        tx = await svc.unlock_funds(
+            wallet.id,
+            500,
+            "ref-unlock-001",
+            escrow_id=escrow_id,
+            reason="ESCROW",
+            source_type="ESCROW",
+            source_id=escrow_id,
+        )
+
+        assert tx.reference == "ref-unlock-001:unlock"
+        repo.get_transaction_by_reference.assert_awaited_once_with("ref-unlock-001:unlock")
+
 
 class TestFundWallet:
     @pytest.mark.asyncio
@@ -261,9 +344,7 @@ class TestFundWallet:
 
         tx = await svc.fund_wallet(wallet.id, 10000, "pay_ref_001", "ETB", "chapa")
 
-        repo.update_balance.assert_called_once_with(
-            wallet.id, balance_delta=10000, locked_delta=0
-        )
+        repo.update_balance.assert_called_once_with(wallet.id, balance_delta=10000, locked_delta=0)
         saved_tx = repo.save_transaction.call_args[0][0]
         assert saved_tx.type == "deposit"
         assert saved_tx.amount == 10000
@@ -363,9 +444,7 @@ class TestFundWallet:
             "chapa",
         )
 
-        repo.update_balance.assert_called_once_with(
-            wallet.id, balance_delta=5000, locked_delta=0
-        )
+        repo.update_balance.assert_called_once_with(wallet.id, balance_delta=5000, locked_delta=0)
         assert tx.status == "success"
         assert tx.reference == "pay_ref_upgrade"
         svc._emit_deposit_success_event.assert_awaited_once_with(wallet, tx)
@@ -447,9 +526,7 @@ class TestDeductBalance:
             "chapa",
         )
 
-        repo.update_balance.assert_called_once_with(
-            wallet.id, balance_delta=-2500, locked_delta=0
-        )
+        repo.update_balance.assert_called_once_with(wallet.id, balance_delta=-2500, locked_delta=0)
         saved_tx = repo.save_transaction.call_args[0][0]
         assert saved_tx.type == "payout"
         assert saved_tx.amount == 2500

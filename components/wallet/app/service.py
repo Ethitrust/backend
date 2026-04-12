@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import math
 import uuid
@@ -29,9 +30,7 @@ class WalletService:
     async def create_wallet(self, owner_id: uuid.UUID, currency: str) -> Wallet:
         existing = await self.repo.get_by_owner_currency(owner_id, currency)
         if existing:
-            raise HTTPException(
-                409, f"Wallet for currency {currency} already exists for this user"
-            )
+            raise HTTPException(409, f"Wallet for currency {currency} already exists for this user")
         return await self.repo.create(owner_id, currency)
 
     async def get_wallets(self, owner_id: uuid.UUID) -> list[Wallet]:
@@ -96,6 +95,22 @@ class WalletService:
     def _new_deposit_reference() -> str:
         return f"wallet-deposit-{uuid.uuid4().hex}"
 
+    @staticmethod
+    def _operation_transaction_reference(reference: str, operation: str) -> str:
+        """Build a deterministic transaction reference per wallet operation.
+
+        Keeps lock references unchanged for lock lookup, while ensuring
+        transaction rows remain globally unique across lock/release/unlock events.
+        """
+        candidate = f"{reference}:{operation}"
+        if len(candidate) <= 255:
+            return candidate
+
+        digest = hashlib.sha256(reference.encode("utf-8")).hexdigest()[:16]
+        max_prefix_len = 255 - len(operation) - len(digest) - 2
+        trimmed_reference = reference[: max(0, max_prefix_len)]
+        return f"{trimmed_reference}:{operation}:{digest}"
+
     @classmethod
     def _normalize_provider(cls, provider: str) -> str:
         normalized = provider.strip().lower()
@@ -124,9 +139,7 @@ class WalletService:
 
             await messaging.publish("wallet.deposit.success", payload)
         except Exception:
-            logger.exception(
-                "Failed to publish wallet.deposit.success for tx_ref=%s", tx.reference
-            )
+            logger.exception("Failed to publish wallet.deposit.success for tx_ref=%s", tx.reference)
 
     async def fund_wallet(
         self,
@@ -389,9 +402,7 @@ class WalletService:
             if initiated_provider and initiated_provider != provider_value:
                 raise HTTPException(409, "TRANSACTION_PROVIDER_MISMATCH")
 
-            await self.repo.update_balance(
-                wallet_id, balance_delta=amount, locked_delta=0
-            )
+            await self.repo.update_balance(wallet_id, balance_delta=amount, locked_delta=0)
             existing_tx.status = "success"
             existing_tx.description = "Wallet funded via payment provider"
             existing_tx.provider = provider_value
@@ -467,9 +478,7 @@ class WalletService:
         if amount > wallet.balance:
             raise HTTPException(400, "INSUFFICIENT_BALANCE")
 
-        await self.repo.update_balance(
-            wallet_id, balance_delta=-amount, locked_delta=amount
-        )
+        await self.repo.update_balance(wallet_id, balance_delta=-amount, locked_delta=amount)
 
         lock = WalletLock(
             wallet_id=wallet_id,
@@ -493,8 +502,7 @@ class WalletService:
             status="success",
             reference=reference,
             description=(
-                f"Funds locked for {source_type_value}:{source_id_value} "
-                f"({reason_value})"
+                f"Funds locked for {source_type_value}:{source_id_value} ({reason_value})"
             ),
             provider="internal",
         )
@@ -517,6 +525,11 @@ class WalletService:
             source_id=source_id,
             escrow_id=escrow_id,
         )
+        tx_reference = self._operation_transaction_reference(reference, "unlock")
+
+        existing_tx = await self.repo.get_transaction_by_reference(tx_reference)
+        if existing_tx is not None:
+            return existing_tx
 
         lock = await self.repo.get_active_lock(wallet_id, reference)
         if not lock:
@@ -532,9 +545,7 @@ class WalletService:
         if amount > wallet.locked_balance:
             raise HTTPException(400, "INSUFFICIENT_LOCKED_BALANCE")
 
-        await self.repo.update_balance(
-            wallet_id, balance_delta=amount, locked_delta=-amount
-        )
+        await self.repo.update_balance(wallet_id, balance_delta=amount, locked_delta=-amount)
         await self.repo.mark_lock_status(lock, "released")
 
         tx = Transaction(
@@ -544,10 +555,9 @@ class WalletService:
             amount=amount,
             currency=wallet.currency,
             status="success",
-            reference=reference,
+            reference=tx_reference,
             description=(
-                f"Locked funds released for {source_type_value}:{source_id_value} "
-                f"({reason_value})"
+                f"Locked funds released for {source_type_value}:{source_id_value} ({reason_value})"
             ),
             provider="internal",
         )
@@ -574,6 +584,11 @@ class WalletService:
             source_id=source_id,
             escrow_id=escrow_id,
         )
+        tx_reference = self._operation_transaction_reference(reference, "capture")
+
+        existing_tx = await self.repo.get_transaction_by_reference(tx_reference)
+        if existing_tx is not None:
+            return existing_tx
 
         lock = await self.repo.get_active_lock(from_wallet_id, reference)
         if not lock:
@@ -594,13 +609,9 @@ class WalletService:
             raise HTTPException(404, "Recipient wallet not found")
 
         # Deduct from sender locked balance
-        await self.repo.update_balance(
-            from_wallet_id, balance_delta=0, locked_delta=-amount
-        )
+        await self.repo.update_balance(from_wallet_id, balance_delta=0, locked_delta=-amount)
         # Credit recipient available balance
-        await self.repo.update_balance(
-            to_wallet_id, balance_delta=amount, locked_delta=0
-        )
+        await self.repo.update_balance(to_wallet_id, balance_delta=amount, locked_delta=0)
         await self.repo.mark_lock_status(lock, "captured")
 
         tx = Transaction(
@@ -610,7 +621,7 @@ class WalletService:
             amount=amount,
             currency=sender.currency,
             status="success",
-            reference=reference,
+            reference=tx_reference,
             description=(
                 f"Locked funds captured for {source_type_value}:{source_id_value} "
                 f"({reason_value}) to wallet {to_wallet_id}"

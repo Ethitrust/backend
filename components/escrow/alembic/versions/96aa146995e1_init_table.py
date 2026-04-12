@@ -1,8 +1,8 @@
-"""init tables
+"""init table
 
-Revision ID: 5023fa34a188
+Revision ID: 96aa146995e1
 Revises: 
-Create Date: 2026-04-08 19:16:27.194301
+Create Date: 2026-04-12 08:51:04.083567
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '5023fa34a188'
+revision: str = '96aa146995e1'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -43,7 +43,6 @@ def upgrade() -> None:
     sa.Column('dispute_window', sa.Integer(), nullable=False),
     sa.Column('how_dispute_handled', sa.String(length=20), nullable=False),
     sa.Column('who_pays_fees', sa.String(length=10), nullable=False),
-    sa.Column('provider', sa.String(length=50), nullable=False),
     sa.Column('org_id', sa.UUID(), nullable=True),
     sa.Column('invite_token_hash', sa.String(length=128), nullable=True),
     sa.Column('invite_expires_at', sa.DateTime(timezone=True), nullable=True),
@@ -55,7 +54,6 @@ def upgrade() -> None:
     sa.Column('last_countered_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('initiator_accepted_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('receiver_accepted_at', sa.DateTime(timezone=True), nullable=True),
-    sa.Column('is_test', sa.Boolean(), nullable=False),
     sa.Column('funded_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('completed_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('cancelled_at', sa.DateTime(timezone=True), nullable=True),

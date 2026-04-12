@@ -20,7 +20,7 @@ async def test_health(client):
 @pytest.mark.asyncio
 async def test_raise_dispute(client):
     r = await client.post(
-        f"/escrow/{ESCROW_ID}/dispute",
+        f"/dispute/{ESCROW_ID}/dispute",
         json={
             "reason": "not_delivered",
             "description": "Item was not delivered as promised.",
@@ -34,13 +34,49 @@ async def test_raise_dispute(client):
 
 
 @pytest.mark.asyncio
+async def test_raise_dispute_route_alias(client):
+    r = await client.post(
+        f"/dispute/{ESCROW_ID}/dispute",
+        json={
+            "reason": "not_delivered",
+            "description": "Item was not delivered as promised.",
+        },
+        headers=AUTH_HEADER,
+    )
+    assert r.status_code == 201
+    data = r.json()
+    assert data["reason"] == "not_delivered"
+    assert data["status"] == "open"
+
+
+@pytest.mark.asyncio
+async def test_raise_dispute_returns_escrow_not_found_detail(client, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr(
+        "app.grpc_clients.get_escrow",
+        AsyncMock(side_effect=RuntimeError("Escrow not found")),
+    )
+    r = await client.post(
+        f"/dispute/{uuid.uuid4()}/dispute",
+        json={
+            "reason": "fraud",
+            "description": "Buyer did not receive the item after agreed delivery date.",
+        },
+        headers=AUTH_HEADER,
+    )
+    assert r.status_code == 404
+    assert r.json()["detail"] == "Escrow not found"
+
+
+@pytest.mark.asyncio
 async def test_get_dispute(client):
     await client.post(
-        f"/escrow/{ESCROW_ID}/dispute",
+        f"/dispute/{ESCROW_ID}/dispute",
         json={"reason": "fraud", "description": "Fraudulent transaction detected."},
         headers=AUTH_HEADER,
     )
-    r = await client.get(f"/escrow/{ESCROW_ID}/dispute", headers=AUTH_HEADER)
+    r = await client.get(f"/dispute/{ESCROW_ID}/dispute", headers=AUTH_HEADER)
     assert r.status_code == 200
     assert r.json()["reason"] == "fraud"
 
@@ -48,7 +84,7 @@ async def test_get_dispute(client):
 @pytest.mark.asyncio
 async def test_resolve_dispute_seller(client):
     create_r = await client.post(
-        f"/escrow/{ESCROW_ID}/dispute",
+        f"/dispute/{ESCROW_ID}/dispute",
         json={
             "reason": "quality_issue",
             "description": "Quality did not meet expectations.",
@@ -57,7 +93,7 @@ async def test_resolve_dispute_seller(client):
     )
     dispute_id = create_r.json()["id"]
     r = await client.post(
-        f"/escrow/{ESCROW_ID}/dispute/{dispute_id}/resolve",
+        f"/dispute/{ESCROW_ID}/dispute/{dispute_id}/resolve",
         json={
             "resolution": "seller",
             "resolution_note": "Evidence supports seller claim.",
@@ -71,7 +107,7 @@ async def test_resolve_dispute_seller(client):
 @pytest.mark.asyncio
 async def test_execute_resolution_after_queueing(client):
     create_r = await client.post(
-        f"/escrow/{ESCROW_ID}/dispute",
+        f"/dispute/{ESCROW_ID}/dispute",
         json={
             "reason": "quality_issue",
             "description": "Quality is clearly below the agreed standard.",
@@ -81,7 +117,7 @@ async def test_execute_resolution_after_queueing(client):
     dispute_id = create_r.json()["id"]
 
     queue_r = await client.post(
-        f"/escrow/{ESCROW_ID}/dispute/{dispute_id}/resolve",
+        f"/dispute/{ESCROW_ID}/dispute/{dispute_id}/resolve",
         json={
             "resolution": "buyer",
             "resolution_note": "Queueing buyer-friendly resolution for worker execution.",
@@ -92,7 +128,7 @@ async def test_execute_resolution_after_queueing(client):
     assert queue_r.json()["status"] == "resolution_pending_buyer"
 
     execute_r = await client.post(
-        f"/disputes/{dispute_id}/execute-resolution",
+        f"/dispute/{dispute_id}/execute-resolution",
         json={
             "resolution": "buyer",
             "admin_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
@@ -105,7 +141,7 @@ async def test_execute_resolution_after_queueing(client):
 @pytest.mark.asyncio
 async def test_execute_resolution_is_idempotent(client):
     create_r = await client.post(
-        f"/escrow/{ESCROW_ID}/dispute",
+        f"/dispute/{ESCROW_ID}/dispute",
         json={
             "reason": "fraud",
             "description": "Evidence supports a clear buyer-side fraudulent pattern.",
@@ -115,7 +151,7 @@ async def test_execute_resolution_is_idempotent(client):
     dispute_id = create_r.json()["id"]
 
     await client.post(
-        f"/escrow/{ESCROW_ID}/dispute/{dispute_id}/resolve",
+        f"/dispute/{ESCROW_ID}/dispute/{dispute_id}/resolve",
         json={
             "resolution": "seller",
             "resolution_note": "Queueing seller-favoring decision for execution.",
@@ -124,11 +160,11 @@ async def test_execute_resolution_is_idempotent(client):
     )
 
     first = await client.post(
-        f"/disputes/{dispute_id}/execute-resolution",
+        f"/dispute/{dispute_id}/execute-resolution",
         json={"resolution": "seller"},
     )
     second = await client.post(
-        f"/disputes/{dispute_id}/execute-resolution",
+        f"/dispute/{dispute_id}/execute-resolution",
         json={"resolution": "seller"},
     )
 
@@ -146,7 +182,7 @@ async def test_execute_resolution_requires_internal_token_when_configured(
     monkeypatch.setattr("app.api.DISPUTE_INTERNAL_TOKEN", "secret-token")
 
     create_r = await client.post(
-        f"/escrow/{ESCROW_ID}/dispute",
+        f"/dispute/{ESCROW_ID}/dispute",
         json={
             "reason": "wrong_item",
             "description": "Wrong item was delivered and resolution is now queued.",
@@ -156,7 +192,7 @@ async def test_execute_resolution_requires_internal_token_when_configured(
     dispute_id = create_r.json()["id"]
 
     await client.post(
-        f"/escrow/{ESCROW_ID}/dispute/{dispute_id}/resolve",
+        f"/dispute/{ESCROW_ID}/dispute/{dispute_id}/resolve",
         json={
             "resolution": "buyer",
             "resolution_note": "Queueing to validate internal token enforcement.",
@@ -165,7 +201,7 @@ async def test_execute_resolution_requires_internal_token_when_configured(
     )
 
     execute_r = await client.post(
-        f"/disputes/{dispute_id}/execute-resolution",
+        f"/dispute/{dispute_id}/execute-resolution",
         json={"resolution": "buyer"},
     )
     assert execute_r.status_code == 401
@@ -185,13 +221,13 @@ async def test_resolve_requires_admin_role(client, monkeypatch):
         ),
     )
     create_r = await client.post(
-        f"/escrow/{ESCROW_ID}/dispute",
+        f"/dispute/{ESCROW_ID}/dispute",
         json={"reason": "fraud", "description": "Fraudulent transaction."},
         headers=AUTH_HEADER,
     )
     dispute_id = create_r.json()["id"]
     r = await client.post(
-        f"/escrow/{ESCROW_ID}/dispute/{dispute_id}/resolve",
+        f"/dispute/{ESCROW_ID}/dispute/{dispute_id}/resolve",
         json={"resolution": "buyer", "resolution_note": "Buyer wins."},
         headers=AUTH_HEADER,
     )
@@ -201,7 +237,7 @@ async def test_resolve_requires_admin_role(client, monkeypatch):
 @pytest.mark.asyncio
 async def test_mark_dispute_under_review(client):
     create_r = await client.post(
-        f"/escrow/{ESCROW_ID}/dispute",
+        f"/dispute/{ESCROW_ID}/dispute",
         json={
             "reason": "fraud",
             "description": "Fraudulent transaction with clear evidence.",
@@ -211,7 +247,7 @@ async def test_mark_dispute_under_review(client):
     dispute_id = create_r.json()["id"]
 
     review_r = await client.post(
-        f"/disputes/{dispute_id}/review",
+        f"/dispute/{dispute_id}/review",
         json={"note": "Escalating for moderator review."},
         headers=AUTH_HEADER,
     )
@@ -222,7 +258,7 @@ async def test_mark_dispute_under_review(client):
 @pytest.mark.asyncio
 async def test_cancel_dispute(client):
     create_r = await client.post(
-        f"/escrow/{ESCROW_ID}/dispute",
+        f"/dispute/{ESCROW_ID}/dispute",
         json={
             "reason": "wrong_item",
             "description": "Received the wrong item and want to cancel dispute.",
@@ -231,7 +267,7 @@ async def test_cancel_dispute(client):
     )
     dispute_id = create_r.json()["id"]
 
-    cancel_r = await client.post(f"/disputes/{dispute_id}/cancel", headers=AUTH_HEADER)
+    cancel_r = await client.post(f"/dispute/{dispute_id}/cancel", headers=AUTH_HEADER)
     assert cancel_r.status_code == 200
     assert cancel_r.json()["status"] == "cancelled"
 
@@ -239,14 +275,14 @@ async def test_cancel_dispute(client):
 @pytest.mark.asyncio
 async def test_list_disputes_for_admin(client):
     await client.post(
-        f"/escrow/{ESCROW_ID}/dispute",
+        f"/dispute/{ESCROW_ID}/dispute",
         json={
             "reason": "quality_issue",
             "description": "Quality was below agreed acceptance criteria.",
         },
         headers=AUTH_HEADER,
     )
-    r = await client.get("/disputes", headers=AUTH_HEADER)
+    r = await client.get("/dispute", headers=AUTH_HEADER)
     assert r.status_code == 200
     payload = r.json()
     assert "items" in payload
@@ -267,5 +303,44 @@ async def test_list_disputes_requires_admin_or_moderator(client, monkeypatch):
         ),
     )
 
-    r = await client.get("/disputes", headers=AUTH_HEADER)
+    r = await client.get("/dispute", headers=AUTH_HEADER)
     assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_list_my_disputes_returns_only_current_user_items(client, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    user_a = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    user_b = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+
+    token_mock = AsyncMock(return_value={"user_id": user_a, "role": "user"})
+    monkeypatch.setattr("app.grpc_clients.validate_token", token_mock)
+
+    await client.post(
+        f"/dispute/{ESCROW_ID}/dispute",
+        json={
+            "reason": "quality_issue",
+            "description": "Raised by user A.",
+        },
+        headers=AUTH_HEADER,
+    )
+
+    token_mock.return_value = {"user_id": user_b, "role": "user"}
+    await client.post(
+        f"/dispute/{ESCROW_ID}/dispute",
+        json={
+            "reason": "fraud",
+            "description": "Raised by user B.",
+        },
+        headers=AUTH_HEADER,
+    )
+
+    token_mock.return_value = {"user_id": user_a, "role": "user"}
+    response = await client.get("/dispute/me", headers=AUTH_HEADER)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert len(payload["items"]) == 1
+    assert payload["items"][0]["raised_by"] == user_a

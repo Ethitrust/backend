@@ -55,9 +55,7 @@ async def validate_token(token: str) -> dict:
     try:
         async with grpc.aio.insecure_channel(AUTH_GRPC) as channel:
             stub = auth_pb2_grpc.AuthValidatorStub(channel)
-            response = await stub.ValidateToken(
-                auth_pb2.TokenRequest(token=token), timeout=5.0
-            )
+            response = await stub.ValidateToken(auth_pb2.TokenRequest(token=token), timeout=5.0)
     except grpc.aio.AioRpcError as exc:
         raise PermissionError("Invalid token") from exc
 
@@ -300,5 +298,4 @@ async def verify_organization_secret_key(secret_key: str) -> dict:
         "org_id": response.org_id,
         "public_key": response.public_key,
         "status": response.status,
-        "is_test": bool(response.is_test),
     }

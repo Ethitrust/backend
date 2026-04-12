@@ -26,24 +26,16 @@ SERVICE_MAP: dict[str, str] = {
     "/users": os.getenv("USER_SERVICE_URL", "http://user-service:8000"),
     "/wallet": os.getenv("WALLET_SERVICE_URL", "http://wallet-service:8000"),
     "/escrow": os.getenv("ESCROW_SERVICE_URL", "http://escrow-service:8000"),
-    "/invoice": os.getenv("INVOICE_SERVICE_URL", "http://invoice-service:8000"),
-    "/payment-link": os.getenv(
-        "PAYMENT_LINK_SERVICE_URL", "http://payment-link-service:8000"
-    ),
+    "/organization": os.getenv("ORGANIZATION_SERVICE_URL", "http://organization-service:8000"),
+    "/payment-link": os.getenv("PAYMENT_LINK_SERVICE_URL", "http://payment-link-service:8000"),
     "/payout": os.getenv("PAYOUT_SERVICE_URL", "http://payout-service:8000"),
     "/kyc": os.getenv("KYC_SERVICE_URL", "http://kyc-service:8000"),
     "/dispute": os.getenv("DISPUTE_SERVICE_URL", "http://dispute-service:8000"),
-    "/notifications": os.getenv(
-        "NOTIFICATION_SERVICE_URL", "http://notification-service:8000"
-    ),
+    "/notifications": os.getenv("NOTIFICATION_SERVICE_URL", "http://notification-service:8000"),
     "/audit": os.getenv("AUDIT_SERVICE_URL", "http://audit-service:8000"),
     "/fee": os.getenv("FEE_SERVICE_URL", "http://fee-service:8000"),
     "/admin": os.getenv("ADMIN_SERVICE_URL", "http://admin-service:8000"),
-    "/banks": os.getenv("BANK_SERVICE_URL", "http://bank-service:8000"),
-    "/org": os.getenv("ORGANIZATION_SERVICE_URL", "http://organization-service:8000"),
-    "/providers": os.getenv(
-        "PAYMENT_PROVIDER_URL", "http://payment-provider-service:8000"
-    ),
+    "/providers": os.getenv("PAYMENT_PROVIDER_URL", "http://payment-provider-service:8000"),
     "/webhooks": os.getenv("WEBHOOK_SERVICE_URL", "http://webhook-service:8000"),
 }
 
@@ -67,9 +59,7 @@ KYC_CACHE_TTL_SECONDS = int(os.getenv("KYC_CACHE_TTL_SECONDS", "60"))
 KYC_CACHE_PREFIX = os.getenv("KYC_CACHE_PREFIX", "gateway:kyc")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
-DEFAULT_UPSTREAM_TIMEOUT_SECONDS = float(
-    os.getenv("GATEWAY_DEFAULT_TIMEOUT_SECONDS", "30")
-)
+DEFAULT_UPSTREAM_TIMEOUT_SECONDS = float(os.getenv("GATEWAY_DEFAULT_TIMEOUT_SECONDS", "30"))
 INVOICE_TIMEOUT_SECONDS = float(os.getenv("GATEWAY_INVOICE_TIMEOUT_SECONDS", "60"))
 KYC_SERVICE_TIMEOUT_SECONDS = float(os.getenv("GATEWAY_KYC_TIMEOUT_SECONDS", "10"))
 
@@ -80,25 +70,17 @@ RETRY_ENABLED = os.getenv("GATEWAY_RETRY_ENABLED", "true").lower() in {
     "on",
 }
 RETRY_MAX_ATTEMPTS = int(os.getenv("GATEWAY_RETRY_MAX_ATTEMPTS", "3"))
-RETRY_BACKOFF_BASE_SECONDS = float(
-    os.getenv("GATEWAY_RETRY_BACKOFF_BASE_SECONDS", "0.2")
-)
+RETRY_BACKOFF_BASE_SECONDS = float(os.getenv("GATEWAY_RETRY_BACKOFF_BASE_SECONDS", "0.2"))
 RETRY_BACKOFF_MAX_SECONDS = float(os.getenv("GATEWAY_RETRY_BACKOFF_MAX_SECONDS", "1.0"))
 
-CIRCUIT_BREAKER_ENABLED = os.getenv(
-    "GATEWAY_CIRCUIT_BREAKER_ENABLED", "true"
-).lower() in {
+CIRCUIT_BREAKER_ENABLED = os.getenv("GATEWAY_CIRCUIT_BREAKER_ENABLED", "true").lower() in {
     "1",
     "true",
     "yes",
     "on",
 }
-CIRCUIT_BREAKER_FAILURE_THRESHOLD = int(
-    os.getenv("GATEWAY_CIRCUIT_BREAKER_FAILURE_THRESHOLD", "5")
-)
-CIRCUIT_BREAKER_OPEN_SECONDS = float(
-    os.getenv("GATEWAY_CIRCUIT_BREAKER_OPEN_SECONDS", "30")
-)
+CIRCUIT_BREAKER_FAILURE_THRESHOLD = int(os.getenv("GATEWAY_CIRCUIT_BREAKER_FAILURE_THRESHOLD", "5"))
+CIRCUIT_BREAKER_OPEN_SECONDS = float(os.getenv("GATEWAY_CIRCUIT_BREAKER_OPEN_SECONDS", "30"))
 
 _KYC_EXEMPT_PREFIXES = (
     "/auth",
@@ -249,9 +231,7 @@ def _get_header_case_insensitive(headers: dict[str, str], name: str) -> str | No
     return None
 
 
-def _append_forwarded_for(
-    existing_value: str | None, client_ip: str | None
-) -> str | None:
+def _append_forwarded_for(existing_value: str | None, client_ip: str | None) -> str | None:
     if not client_ip:
         return existing_value
     if not existing_value:
@@ -351,9 +331,7 @@ async def _send_with_resilience(
             await asyncio.sleep(delay)
 
     if isinstance(last_exc, httpx.TimeoutException):
-        raise HTTPException(
-            status_code=504, detail="Upstream service timed out"
-        ) from last_exc
+        raise HTTPException(status_code=504, detail="Upstream service timed out") from last_exc
     if isinstance(last_exc, httpx.ConnectError):
         raise HTTPException(
             status_code=502,
@@ -484,18 +462,14 @@ _HOP_BY_HOP = frozenset(
 )
 
 
-@app.api_route(
-    "/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
-)
+@app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
 async def proxy(request: Request, path: str) -> Response:
     await _enforce_kyc_if_required(request)
 
     full_path = f"/{path}"
     target = _resolve_target(full_path)
     if target is None:
-        raise HTTPException(
-            status_code=404, detail=f"No service found for path: {full_path}"
-        )
+        raise HTTPException(status_code=404, detail=f"No service found for path: {full_path}")
 
     base_url, upstream_path = target
     target_url = f"{base_url.rstrip('/')}{upstream_path}"
@@ -524,20 +498,15 @@ async def proxy(request: Request, path: str) -> Response:
             request,
             client,
             upstream_request,
-            service_prefix=upstream_path.split("/")[1]
-            and f"/{upstream_path.split('/')[1]}",
+            service_prefix=upstream_path.split("/")[1] and f"/{upstream_path.split('/')[1]}",
             timeout=timeout,
         )
     except RuntimeError as exc:
-        raise HTTPException(
-            status_code=502, detail="Could not proxy upstream request"
-        ) from exc
+        raise HTTPException(status_code=502, detail="Could not proxy upstream request") from exc
 
     # Filter hop-by-hop response headers
     res_headers = {
-        k: v
-        for k, v in upstream_response.headers.items()
-        if k.lower() not in _HOP_BY_HOP
+        k: v for k, v in upstream_response.headers.items() if k.lower() not in _HOP_BY_HOP
     }
 
     return StreamingResponse(

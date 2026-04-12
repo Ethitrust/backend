@@ -22,10 +22,16 @@ _PROTO_DIR = _APP_DIR.parent / "proto"
 if str(_PROTO_DIR) not in sys.path:
     sys.path.insert(0, str(_PROTO_DIR))
 
+_ESCROW_PROTO_DIR = _APP_DIR.parent.parent / "escrow" / "proto"
+if str(_ESCROW_PROTO_DIR) not in sys.path:
+    sys.path.insert(0, str(_ESCROW_PROTO_DIR))
+
 proto_module = sys.modules.setdefault("proto", type(sys)("proto"))
 proto_paths = list(getattr(proto_module, "__path__", []))
 if str(_PROTO_DIR) not in proto_paths:
     proto_module.__path__ = [*proto_paths, str(_PROTO_DIR)]
+if str(_ESCROW_PROTO_DIR) not in getattr(proto_module, "__path__", []):
+    proto_module.__path__ = [*proto_module.__path__, str(_ESCROW_PROTO_DIR)]
 
 import proto.audit_pb2 as audit_pb2
 import proto.audit_pb2_grpc as audit_pb2_grpc
@@ -33,6 +39,8 @@ import proto.auth_pb2 as auth_pb2
 import proto.auth_pb2_grpc as auth_pb2_grpc
 import proto.dispute_pb2 as dispute_pb2
 import proto.dispute_pb2_grpc as dispute_pb2_grpc
+import proto.escrow_pb2 as escrow_pb2
+import proto.escrow_pb2_grpc as escrow_pb2_grpc
 import proto.fee_pb2 as fee_pb2
 import proto.fee_pb2_grpc as fee_pb2_grpc
 import proto.payout_pb2 as payout_pb2
@@ -48,6 +56,7 @@ PAYOUT_GRPC = os.getenv("PAYOUT_GRPC", "payout-service:50051")
 AUDIT_GRPC = os.getenv("AUDIT_GRPC", "audit-service:50051")
 DISPUTE_GRPC = os.getenv("DISPUTE_GRPC", "dispute-service:50051")
 FEE_GRPC = os.getenv("FEE_GRPC", "fee-service:50051")
+ESCROW_GRPC = os.getenv("ESCROW_GRPC", "escrow-service:50051")
 
 
 # async def update_email_verifiication_status(user_id: str, is_verified: bool):
@@ -63,9 +72,7 @@ async def validate_token(token: str) -> dict:
     try:
         async with grpc.aio.insecure_channel(AUTH_GRPC) as channel:
             stub = auth_pb2_grpc.AuthValidatorStub(channel)
-            response = await stub.ValidateToken(
-                auth_pb2.TokenRequest(token=token), timeout=5.0
-            )
+            response = await stub.ValidateToken(auth_pb2.TokenRequest(token=token), timeout=5.0)
     except grpc.aio.AioRpcError as exc:
         raise PermissionError("Invalid token") from exc
 
@@ -469,3 +476,24 @@ async def refund_fee_for_escrow(*, escrow_id: uuid.UUID) -> list[dict[str, Any]]
         }
         for item in response.items
     ]
+
+
+async def get_escrow(*, escrow_id: uuid.UUID) -> dict[str, Any]:
+    request = escrow_pb2.EscrowRequest(escrow_id=str(escrow_id))
+
+    try:
+        async with grpc.aio.insecure_channel(ESCROW_GRPC) as channel:
+            stub = escrow_pb2_grpc.EscrowServiceStub(channel)
+            response = await stub.GetEscrow(request, timeout=8.0)
+    except grpc.aio.AioRpcError as exc:
+        raise RuntimeError("Unable to fetch escrow details") from exc
+
+    return {
+        "escrow_id": response.escrow_id,
+        "status": response.status,
+        "escrow_type": response.escrow_type,
+        "initiator_id": response.initiator_id or None,
+        "receiver_id": response.receiver_id or None,
+        "amount": int(response.amount),
+        "currency": response.currency,
+    }

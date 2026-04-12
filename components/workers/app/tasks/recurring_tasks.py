@@ -14,6 +14,7 @@ def process_recurring_cycle_due(self):
     """
     Processes recurring escrow cycles that are due today. Called daily by Celery beat.
     """
+    # TODO: we should use grpc or a message queu for this kind of things
     try:
         r = httpx.post(
             f"{ESCROW_SERVICE_URL}/escrow/internal/process-recurring",

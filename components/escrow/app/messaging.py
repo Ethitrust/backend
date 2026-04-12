@@ -4,7 +4,8 @@ RabbitMQ publisher and consumer for the Escrow service.
 Publishes:  escrow.created, escrow.cancelled, escrow.completed,
             milestone.delivered, milestone.approved,
             escrow.contributor_joined
-Consumes:   payment.completed  → ignored for escrow activation (wallet-topup flow)
+Consumes:   wallet.deposit.success → retries pending escrow wallet lock
+            payment.completed      → compatibility fallback for older emitters
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import uuid
 from typing import TYPE_CHECKING
 
 import aio_pika
@@ -60,13 +62,47 @@ async def handle_event(key: str, data: dict) -> None:
     """
     Process an incoming event from the message broker.
 
-    payment.completed is ignored for escrow activation.
+    Funding events trigger pending-escrow lock retries for the funded buyer.
     """
-    if key == "payment.completed":
-        transaction_ref = data.get("transaction_ref") or data.get("reference")
+    if key not in {"wallet.deposit.success", "payment.completed"}:
+        return
+
+    user_id_raw = data.get("user_id")
+    if user_id_raw is None and isinstance(data.get("metadata"), dict):
+        user_id_raw = data["metadata"].get("user_id")
+
+    transaction_ref = data.get("transaction_ref") or data.get("reference")
+    if not user_id_raw:
         logger.info(
-            "Ignoring payment.completed for escrow activation (ref=%s)",
+            "%s ignored for escrow activation; user_id missing (ref=%s)",
+            key,
             transaction_ref,
+        )
+        return
+
+    try:
+        buyer_id = uuid.UUID(str(user_id_raw))
+    except ValueError:
+        logger.warning("%s ignored; invalid user_id=%s", key, user_id_raw)
+        return
+
+    from app.db import async_session_factory  # noqa: PLC0415
+    from app.repository import EscrowRepository  # noqa: PLC0415
+    from app.service import EscrowService  # noqa: PLC0415
+
+    async with async_session_factory() as session:
+        repo = EscrowRepository(session)
+        service = EscrowService(repo)
+        activated = await service.activate_pending_escrows_for_buyer(
+            buyer_id=buyer_id,
+            trigger_reference=str(transaction_ref) if transaction_ref else None,
+        )
+        logger.info(
+            "Processed %s for buyer=%s ref=%s activated_pending_escrows=%s",
+            key,
+            buyer_id,
+            transaction_ref,
+            activated,
         )
 
 
@@ -80,6 +116,7 @@ async def start_consumer() -> None:
             EXCHANGE_NAME, aio_pika.ExchangeType.TOPIC, durable=True
         )
         queue = await channel.declare_queue(QUEUE_NAME, durable=True)
+        await queue.bind(exchange, routing_key="wallet.deposit.success")
         await queue.bind(exchange, routing_key="payment.#")
 
         logger.info("Escrow consumer started, listening on queue '%s'", QUEUE_NAME)

@@ -19,6 +19,7 @@ from pydantic import ValidationError
 TEST_USER_ID = uuid.UUID("11111111-1111-4111-8111-11111111111a")
 TEST_RECEIVER_ID = uuid.UUID("22222222-2222-4222-8222-22222222222b")
 TEST_STRANGER_ID = uuid.UUID("33333333-3333-4333-3333-333333333333")
+TEST_ORG_ID = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 
 
 def make_escrow(**kwargs) -> Escrow:
@@ -50,7 +51,6 @@ def make_escrow(**kwargs) -> Escrow:
         last_countered_at=None,
         initiator_accepted_at=None,
         receiver_accepted_at=None,
-        is_test=False,
     )
     defaults.update(kwargs)
     e = Escrow()
@@ -101,7 +101,7 @@ async def test_initialize_onetime(svc, repo):
     repo.create = AsyncMock(return_value=escrow)
 
     with (
-        patch("app.messaging.publish", AsyncMock()),
+        patch("app.service.publish", AsyncMock()),
     ):
         result_escrow, payment_url = await svc.initialize(
             OneTimeEscrowCreate(
@@ -131,7 +131,7 @@ async def test_initialize_milestone(svc, repo):
     repo.create_milestone = AsyncMock(return_value=milestone_obj)
 
     with (
-        patch("app.messaging.publish", AsyncMock()),
+        patch("app.service.publish", AsyncMock()),
     ):
         result_escrow, _ = await svc.initialize(
             MilestoneEscrowCreate(
@@ -169,7 +169,7 @@ async def test_accept_invitation_locks_wallet_and_transitions_to_active(svc, rep
     with (
         patch("app.grpc_clients.get_user_wallet", AsyncMock(return_value="wallet-1")),
         patch("app.grpc_clients.lock_funds", AsyncMock(return_value=True)),
-        patch("app.messaging.publish", AsyncMock()) as mock_publish,
+        patch("app.service.publish", AsyncMock()) as mock_publish,
     ):
         result, payment_url = await svc.accept_invitation(
             escrow.id,
@@ -202,7 +202,7 @@ async def test_accept_invitation_insufficient_balance_keeps_pending(svc, repo):
         fee_amount=1500,
     )
     repo.get_by_id = AsyncMock(return_value=escrow)
-    repo.save = AsyncMock(return_value=make_escrow(status="pending"))
+    repo.save = AsyncMock(side_effect=lambda model: model)
 
     with (
         patch("app.grpc_clients.get_user_wallet", AsyncMock(return_value="wallet-1")),
@@ -210,7 +210,7 @@ async def test_accept_invitation_insufficient_balance_keeps_pending(svc, repo):
             "app.grpc_clients.lock_funds",
             AsyncMock(side_effect=RuntimeError("INSUFFICIENT_BALANCE")),
         ),
-        patch("app.messaging.publish", AsyncMock()) as mock_publish,
+        patch("app.service.publish", AsyncMock()) as mock_publish,
     ):
         result, payment_url = await svc.accept_invitation(
             escrow.id,
@@ -273,7 +273,7 @@ async def test_counter_invitation_increments_version(svc, repo):
     repo.save = AsyncMock(return_value=escrow)
     repo.create_counter_offer = AsyncMock()
 
-    with patch("app.messaging.publish", AsyncMock()) as mock_publish:
+    with patch("app.service.publish", AsyncMock()) as mock_publish:
         result = await svc.counter_invitation(
             escrow.id,
             TEST_RECEIVER_ID,
@@ -326,7 +326,7 @@ async def test_counter_invitation_marks_previous_as_countered_again(svc, repo):
     repo.create_counter_offer = AsyncMock()
     repo.save = AsyncMock(return_value=escrow)
 
-    with patch("app.messaging.publish", AsyncMock()) as mock_publish:
+    with patch("app.service.publish", AsyncMock()) as mock_publish:
         result = await svc.counter_invitation(
             escrow.id,
             TEST_RECEIVER_ID,
@@ -380,7 +380,7 @@ async def test_accept_with_token_binds_receiver_and_invalidates_token(svc, repo)
         patch("app.grpc_clients.get_user_wallet", AsyncMock(return_value="wallet-1")),
         patch("app.grpc_clients.lock_funds", AsyncMock(return_value=True)),
         patch("app.grpc_clients.check_org_membership", AsyncMock(return_value=True)),
-        patch("app.messaging.publish", AsyncMock()),
+        patch("app.service.publish", AsyncMock()),
     ):
         result, _ = await svc.accept_invitation(
             escrow.id,
@@ -406,7 +406,7 @@ async def test_resend_invitation_refreshes_email_token(svc, repo):
             "app.service._hash_invite_token",
             return_value="hashed-new-token",
         ),
-        patch("app.messaging.publish", AsyncMock()),
+        patch("app.service.publish", AsyncMock()),
     ):
         result = await svc.resend_invitation(
             escrow.id,
@@ -489,16 +489,39 @@ async def test_org_scoped_initialize_requires_org_actor(svc, repo):
                 currency="ETB",
                 amount=25_000,
                 initiator_role="seller",
-                seller_type="organization",
-                org_id=uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
                 receiver_id=TEST_RECEIVER_ID,
             ),
-            "user",
-            TEST_USER_ID,
+            "organization",
+            None,
             None,
         )
 
     assert exc_info.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_org_actor_can_initialize_individual_seller_payload(svc, repo):
+    repo.create = AsyncMock(
+        return_value=make_escrow(initiator_id=None, initiator_org_id=TEST_ORG_ID)
+    )
+
+    with patch("app.service.publish", AsyncMock()):
+        escrow, payment_url = await svc.initialize(
+            OneTimeEscrowCreate(
+                escrow_type="onetime",
+                title="Org buyer to individual seller",
+                currency="ETB",
+                amount=50,
+                initiator_role="buyer",
+                receiver_email="nahom.network@gmail.com",
+            ),
+            "organization",
+            None,
+            TEST_ORG_ID,
+        )
+
+    assert payment_url is None
+    assert escrow.initiator_org_id == TEST_ORG_ID
 
 
 def test_milestone_initialize_payload_rejects_amount_mismatch():
@@ -517,51 +540,45 @@ def test_milestone_initialize_payload_rejects_amount_mismatch():
         )
 
 
-def test_onetime_org_seller_requires_org_id():
-    with pytest.raises(ValidationError):
-        OneTimeEscrowCreate(
-            escrow_type="onetime",
-            title="Org escrow",
-            currency="ETB",
-            amount=100_000,
-            initiator_role="seller",
-            seller_type="organization",
-        )
+def test_onetime_seller_without_org_id_is_valid():
+    model = OneTimeEscrowCreate(
+        escrow_type="onetime",
+        title="Individual seller escrow",
+        currency="ETB",
+        amount=100_000,
+        initiator_role="seller",
+        receiver_id=uuid.UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+    )
+    assert model.initiator_role == "seller"
 
 
-def test_onetime_org_seller_allows_receiver_individual():
+def test_onetime_seller_allows_receiver_individual():
     model = OneTimeEscrowCreate(
         escrow_type="onetime",
         title="Org escrow",
         currency="ETB",
         amount=100_000,
         initiator_role="seller",
-        seller_type="organization",
-        org_id=uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
         receiver_id=uuid.UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
     )
-    assert model.org_id is not None
+    assert model.receiver_id is not None
 
 
-def test_onetime_org_seller_rejects_buyer_initiator_role():
-    with pytest.raises(ValidationError):
-        OneTimeEscrowCreate(
-            escrow_type="onetime",
-            title="Org escrow invalid role",
-            currency="ETB",
-            amount=100_000,
-            initiator_role="buyer",
-            seller_type="organization",
-            org_id=uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
-            receiver_id=uuid.UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
-        )
+def test_onetime_buyer_role_is_valid_without_org_payload_field():
+    model = OneTimeEscrowCreate(
+        escrow_type="onetime",
+        title="Buyer role escrow",
+        currency="ETB",
+        amount=100_000,
+        initiator_role="buyer",
+        receiver_id=uuid.UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+    )
+    assert model.initiator_role == "buyer"
 
 
 @pytest.mark.asyncio
 async def test_initialize_rejects_receiver_when_receiver_is_organization(svc, repo):
-    with patch(
-        "app.grpc_clients.check_organization_exists", AsyncMock(return_value=True)
-    ):
+    with patch("app.grpc_clients.check_organization_exists", AsyncMock(return_value=True)):
         with pytest.raises(HTTPException) as exc_info:
             await svc.initialize(
                 OneTimeEscrowCreate(
@@ -606,6 +623,79 @@ async def test_valid_transition_pending_to_active(svc, repo):
 
 
 @pytest.mark.asyncio
+async def test_activate_pending_escrows_for_buyer_locks_and_activates(svc, repo):
+    escrow = make_escrow(
+        status="pending",
+        funded_at=None,
+        initiator_role="buyer",
+        initiator_id=TEST_USER_ID,
+        receiver_id=TEST_RECEIVER_ID,
+    )
+    repo.list_pending_unfunded_for_participant = AsyncMock(return_value=[escrow])
+    repo.save = AsyncMock(side_effect=lambda model: model)
+
+    with (
+        patch("app.grpc_clients.get_user_wallet", AsyncMock(return_value="wallet-1")),
+        patch("app.grpc_clients.lock_funds", AsyncMock(return_value=True)) as mock_lock,
+        patch("app.service.publish", AsyncMock()) as mock_publish,
+    ):
+        activated = await svc.activate_pending_escrows_for_buyer(
+            TEST_USER_ID,
+            trigger_reference="wallet-deposit-ref-1",
+        )
+
+    assert activated == 1
+    assert escrow.status == "active"
+    assert escrow.funded_at is not None
+    mock_lock.assert_awaited_once_with(
+        wallet_id="wallet-1",
+        amount=escrow.amount,
+        reference=escrow.transaction_ref,
+        escrow_id=str(escrow.id),
+    )
+    mock_publish.assert_any_await(
+        "escrow.activated",
+        {
+            "escrow_id": str(escrow.id),
+            "transaction_ref": escrow.transaction_ref,
+            "activation_source": "wallet_deposit_success",
+            "trigger_reference": "wallet-deposit-ref-1",
+            "initiator_id": str(escrow.initiator_id),
+            "receiver_id": str(escrow.receiver_id),
+            "receiver_email": escrow.receiver_email,
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_activate_pending_escrows_for_buyer_insufficient_keeps_pending(svc, repo):
+    escrow = make_escrow(
+        status="pending",
+        funded_at=None,
+        initiator_role="buyer",
+        initiator_id=TEST_USER_ID,
+        receiver_id=TEST_RECEIVER_ID,
+    )
+    repo.list_pending_unfunded_for_participant = AsyncMock(return_value=[escrow])
+    repo.save = AsyncMock(side_effect=lambda model: model)
+
+    with (
+        patch("app.grpc_clients.get_user_wallet", AsyncMock(return_value="wallet-1")),
+        patch(
+            "app.grpc_clients.lock_funds",
+            AsyncMock(side_effect=RuntimeError("INSUFFICIENT_BALANCE")),
+        ),
+        patch("app.service.publish", AsyncMock()) as mock_publish,
+    ):
+        activated = await svc.activate_pending_escrows_for_buyer(TEST_USER_ID)
+
+    assert activated == 0
+    assert escrow.status == "pending"
+    assert escrow.funded_at is None
+    mock_publish.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_cancel_escrow(svc, repo):
     """cancel_escrow() should transition pending escrow to cancelled and unlock funds."""
     escrow = make_escrow(status="pending", funded_at=datetime.now(timezone.utc))
@@ -615,12 +705,8 @@ async def test_cancel_escrow(svc, repo):
     repo.save = AsyncMock(return_value=cancelled)
 
     with (
-        patch(
-            "app.grpc_clients.unlock_funds", AsyncMock(return_value=True)
-        ) as mock_unlock,
-        patch(
-            "app.grpc_clients.get_user_wallet", AsyncMock(return_value="wallet-uuid")
-        ),
+        patch("app.grpc_clients.unlock_funds", AsyncMock(return_value=True)) as mock_unlock,
+        patch("app.grpc_clients.get_user_wallet", AsyncMock(return_value="wallet-uuid")),
         patch("app.service.publish", AsyncMock()),
     ):
         result = await svc.cancel_escrow(escrow.id, TEST_USER_ID)
@@ -644,29 +730,67 @@ async def test_get_escrow_forbidden(svc, repo):
 @pytest.mark.asyncio
 async def test_mark_complete(svc, repo):
     """Buyer (initiator with role=buyer) can complete an active escrow."""
-    escrow = make_escrow(
-        status="active", initiator_id=TEST_USER_ID, initiator_role="buyer"
-    )
-    completed = make_escrow(
-        status="completed", initiator_id=TEST_USER_ID, initiator_role="buyer"
-    )
+    escrow = make_escrow(status="active", initiator_id=TEST_USER_ID, initiator_role="buyer")
+    completed = make_escrow(status="completed", initiator_id=TEST_USER_ID, initiator_role="buyer")
     repo.get_by_id = AsyncMock(return_value=escrow)
     repo.update_status = AsyncMock(return_value=completed)
     repo.save = AsyncMock(return_value=completed)
 
     with (
-        patch(
-            "app.grpc_clients.release_funds", AsyncMock(return_value=True)
-        ) as mock_release,
-        patch(
-            "app.grpc_clients.get_user_wallet", AsyncMock(return_value="wallet-uuid")
-        ),
-        patch("app.messaging.publish", AsyncMock()),
+        patch("app.grpc_clients.release_funds", AsyncMock(return_value=True)) as mock_release,
+        patch("app.grpc_clients.get_user_wallet", AsyncMock(return_value="wallet-uuid")),
+        patch("app.service.publish", AsyncMock()),
     ):
         result = await svc.mark_complete(escrow.id, TEST_USER_ID)
 
     assert result.status == "completed"
     mock_release.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_mark_complete_fails_when_wallet_missing(svc, repo):
+    """Completion should fail and avoid status transition if either wallet is missing."""
+    escrow = make_escrow(status="active", initiator_id=TEST_USER_ID, initiator_role="buyer")
+    repo.get_by_id = AsyncMock(return_value=escrow)
+    repo.update_status = AsyncMock()
+    repo.save = AsyncMock()
+
+    with (
+        patch("app.grpc_clients.get_user_wallet", AsyncMock(return_value=None)),
+        patch("app.grpc_clients.release_funds", AsyncMock(return_value=True)) as mock_release,
+        patch("app.service.publish", AsyncMock()),
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            await svc.mark_complete(escrow.id, TEST_USER_ID)
+
+    assert exc_info.value.status_code == 409
+    repo.update_status.assert_not_awaited()
+    repo.save.assert_not_awaited()
+    mock_release.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_mark_complete_release_failure_does_not_persist_completed(svc, repo):
+    """Completion should not be persisted when wallet release errors."""
+    escrow = make_escrow(status="active", initiator_id=TEST_USER_ID, initiator_role="buyer")
+    repo.get_by_id = AsyncMock(return_value=escrow)
+    repo.update_status = AsyncMock()
+    repo.save = AsyncMock()
+
+    with (
+        patch("app.grpc_clients.get_user_wallet", AsyncMock(return_value="wallet-uuid")),
+        patch(
+            "app.grpc_clients.release_funds",
+            AsyncMock(side_effect=RuntimeError("release failed")),
+        ),
+        patch("app.service.publish", AsyncMock()),
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            await svc.mark_complete(escrow.id, TEST_USER_ID)
+
+    assert exc_info.value.status_code == 503
+    repo.update_status.assert_not_awaited()
+    repo.save.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -703,7 +827,7 @@ async def test_deliver_milestone(svc, repo):
     repo.get_milestone = AsyncMock(return_value=milestone)
     repo.update_milestone = AsyncMock(return_value=delivered)
 
-    with patch("app.messaging.publish", AsyncMock()):
+    with patch("app.service.publish", AsyncMock()):
         result = await svc.deliver_milestone(escrow_id, milestone.id, TEST_RECEIVER_ID)
 
     assert result.status == "delivered"
@@ -733,13 +857,9 @@ async def test_approve_milestone(svc, repo):
     repo.save = AsyncMock()
 
     with (
-        patch(
-            "app.grpc_clients.release_funds", AsyncMock(return_value=True)
-        ) as mock_release,
-        patch(
-            "app.grpc_clients.get_user_wallet", AsyncMock(return_value="wallet-uuid")
-        ),
-        patch("app.messaging.publish", AsyncMock()),
+        patch("app.grpc_clients.release_funds", AsyncMock(return_value=True)) as mock_release,
+        patch("app.grpc_clients.get_user_wallet", AsyncMock(return_value="wallet-uuid")),
+        patch("app.service.publish", AsyncMock()),
     ):
         result = await svc.approve_milestone(escrow_id, milestone_id, TEST_USER_ID)
 

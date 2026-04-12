@@ -34,6 +34,7 @@ def check_invitation_expiry(self):
     """
     Expires stale invitation-state escrows. Called by Celery beat every hour.
     """
+    # TODO: we should use grpc or a message queu for this kind of things
     try:
         r = httpx.post(
             f"{ESCROW_SERVICE_URL}/escrow/internal/process-invitation-expiry",

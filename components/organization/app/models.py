@@ -11,7 +11,6 @@ from pydantic import BaseModel, Field
 class OrgCreate(BaseModel):
     name: str = Field(..., max_length=255)
     slug: str = Field(..., max_length=100, pattern=r"^[a-z0-9-]+$")
-    is_test: bool = True
 
 
 class OrgResponse(BaseModel):
