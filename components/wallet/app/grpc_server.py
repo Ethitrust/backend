@@ -18,6 +18,7 @@ from pathlib import Path
 
 import grpc
 import grpc.aio
+from fastapi import HTTPException
 
 _APP_DIR = Path(__file__).resolve().parent
 if str(_APP_DIR) not in sys.path:
@@ -34,6 +35,7 @@ if str(_PROTO_DIR) not in proto_paths:
 
 import proto.wallet_pb2 as wallet_pb2
 import proto.wallet_pb2_grpc as wallet_pb2_grpc
+
 from app.db import AsyncSessionLocal
 from app.repository import WalletRepository
 from app.service import WalletService
@@ -59,16 +61,26 @@ class WalletServicer(wallet_pb2_grpc.WalletServiceServicer):
 
         currency = request.currency.strip().upper()
         if not currency:
-            await context.abort(
-                grpc.StatusCode.INVALID_ARGUMENT, "Currency is required"
-            )
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Currency is required")
 
         try:
             async with AsyncSessionLocal() as session:
-                wallet = await _svc(session).get_wallet_by_owner_currency(
+                svc = _svc(session)
+                wallet = await svc.get_wallet_by_owner_currency(
                     owner_id,
                     currency,
                 )
+                if wallet is None:
+                    try:
+                        wallet = await svc.create_wallet(owner_id, currency)
+                    except HTTPException as exc:
+                        if exc.status_code == 409:
+                            await session.rollback()
+                            wallet = await svc.get_wallet_by_owner_currency(owner_id, currency)
+                        else:
+                            raise
+                    else:
+                        await session.commit()
             if wallet is None:
                 return wallet_pb2.OwnerWalletResponse(found=False, wallet_id="")
             return wallet_pb2.OwnerWalletResponse(found=True, wallet_id=str(wallet.id))

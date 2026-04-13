@@ -18,9 +18,7 @@ async def db():
     engine = create_async_engine(TEST_DB)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    session_factory = async_sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False
-    )
+    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with session_factory() as session:
         yield session
     async with engine.begin() as conn:
@@ -31,9 +29,7 @@ async def db():
 @pytest.fixture
 async def client(db):
     app.dependency_overrides[get_db] = lambda: db
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as ac:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
     app.dependency_overrides.clear()
 
@@ -59,6 +55,30 @@ def mock_grpc(monkeypatch):
                 "is_verified": True,
                 "is_banned": False,
                 "kyc_level": 2,
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "app.grpc_clients.ensure_owner_wallet",
+        AsyncMock(return_value="55555555-5555-5555-5555-555555555555"),
+    )
+    monkeypatch.setattr(
+        "app.grpc_clients.get_wallet_balance",
+        AsyncMock(
+            return_value={
+                "balance": 100_000,
+                "locked_balance": 10_000,
+                "currency": "ETB",
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "app.grpc_clients.deduct_wallet_balance",
+        AsyncMock(
+            return_value={
+                "success": True,
+                "new_balance": 95_000,
+                "message": "Deducted",
             }
         ),
     )

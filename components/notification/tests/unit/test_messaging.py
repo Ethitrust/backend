@@ -115,6 +115,20 @@ def test_enrich_email_metadata_builds_invitation_url(monkeypatch):
     )
 
 
+def test_enrich_email_metadata_builds_invitation_url_without_token(monkeypatch):
+    monkeypatch.setattr("app.messaging.FRONTEND_URL", "https://ethitrust.me")
+
+    enriched = messaging._enrich_email_metadata(
+        "escrow.invite_received",
+        {
+            "escrow_id": "escrow-123",
+            "initiator_actor_type": "organization",
+        },
+    )
+
+    assert enriched["invitation_url"] == "https://ethitrust.me/invitation?escrow_id=escrow-123"
+
+
 def test_event_titles_include_auth_email_events() -> None:
     assert "user.otp_resent" in messaging._EVENT_TITLES
     assert "user.password_reset_requested" in messaging._EVENT_TITLES

@@ -125,6 +125,38 @@ class RecurringEscrowCreate(BaseEscrowCreate):
         return self
 
 
+class BaseOrganizationEscrowCreate(BaseEscrowCreate):
+    initiator_role: Literal["seller"] = "seller"
+
+
+class OneTimeOrganizationEscrowCreate(BaseOrganizationEscrowCreate):
+    escrow_type: Literal["onetime"] = "onetime"
+
+
+class MilestoneOrganizationEscrowCreate(BaseOrganizationEscrowCreate):
+    escrow_type: Literal["milestone"] = "milestone"
+    milestones: list[MilestoneCreate] = Field(..., min_length=1)
+    deposit_option: Literal["full", "milestone"] = "full"
+
+    @model_validator(mode="after")
+    def validate_amount_matches_milestones(self) -> MilestoneOrganizationEscrowCreate:
+        total = sum(m.amount for m in self.milestones)
+        if self.amount != total:
+            raise ValueError("For milestone escrow, amount must equal sum(milestones.amount)")
+        return self
+
+
+class RecurringOrganizationEscrowCreate(BaseOrganizationEscrowCreate):
+    escrow_type: Literal["recurring"] = "recurring"
+    cycle: RecurringCycleCreate
+
+    @model_validator(mode="after")
+    def validate_amount_matches_cycle(self) -> RecurringOrganizationEscrowCreate:
+        if self.amount != self.cycle.expected_amount:
+            raise ValueError("For recurring escrow, amount must equal cycle.expected_amount")
+        return self
+
+
 class ContributorJoinRequest(BaseModel):
     contribution: int = Field(..., gt=0)
     name: Optional[str] = None
@@ -195,6 +227,14 @@ class InvitationPrecheckResponse(BaseModel):
 # Strict create union – validated at API boundary using escrow_type discriminator
 EscrowCreateRequest = Annotated[
     OneTimeEscrowCreate | MilestoneEscrowCreate | RecurringEscrowCreate,
+    Field(discriminator="escrow_type"),
+]
+
+
+OrganizationEscrowCreateRequest = Annotated[
+    OneTimeOrganizationEscrowCreate
+    | MilestoneOrganizationEscrowCreate
+    | RecurringOrganizationEscrowCreate,
     Field(discriminator="escrow_type"),
 ]
 

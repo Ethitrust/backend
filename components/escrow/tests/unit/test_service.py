@@ -10,7 +10,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from app.db import Escrow, Milestone, RecurringCycle
-from app.models import MilestoneEscrowCreate, OneTimeEscrowCreate
+from app.models import (
+    MilestoneEscrowCreate,
+    OneTimeEscrowCreate,
+    OneTimeOrganizationEscrowCreate,
+)
 from app.repository import EscrowRepository
 from app.service import EscrowService
 from fastapi import HTTPException
@@ -509,10 +513,10 @@ async def test_org_actor_can_initialize_individual_seller_payload(svc, repo):
         escrow, payment_url = await svc.initialize(
             OneTimeEscrowCreate(
                 escrow_type="onetime",
-                title="Org buyer to individual seller",
+                title="Org seller to individual buyer",
                 currency="ETB",
                 amount=50,
-                initiator_role="buyer",
+                initiator_role="seller",
                 receiver_email="nahom.network@gmail.com",
             ),
             "organization",
@@ -522,6 +526,30 @@ async def test_org_actor_can_initialize_individual_seller_payload(svc, repo):
 
     assert payment_url is None
     assert escrow.initiator_org_id == TEST_ORG_ID
+
+
+@pytest.mark.asyncio
+async def test_org_actor_initialize_rejects_buyer_initiator_role(svc, repo):
+    with pytest.raises(ValidationError):
+        OneTimeOrganizationEscrowCreate(
+            escrow_type="onetime",
+            title="Org buyer forbidden",
+            currency="ETB",
+            amount=50,
+            initiator_role="buyer",
+            receiver_email="nahom.network@gmail.com",
+        )
+
+
+def test_org_schema_defaults_initiator_role_to_seller() -> None:
+    model = OneTimeOrganizationEscrowCreate(
+        escrow_type="onetime",
+        title="Org default seller",
+        currency="ETB",
+        amount=100_000,
+        receiver_id=uuid.UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+    )
+    assert model.initiator_role == "seller"
 
 
 def test_milestone_initialize_payload_rejects_amount_mismatch():
@@ -808,6 +836,96 @@ async def test_mark_complete_forbidden_for_non_buyer(svc, repo):
         await svc.mark_complete(escrow.id, TEST_USER_ID)
 
     assert exc_info.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_mark_complete_allows_receiver_when_initiator_role_is_seller(svc, repo):
+    """For seller-initiated escrows, receiver is buyer and can complete when active."""
+    escrow = make_escrow(
+        status="active",
+        initiator_id=TEST_STRANGER_ID,
+        initiator_role="seller",
+        receiver_id=TEST_USER_ID,
+    )
+    completed = make_escrow(
+        status="completed",
+        initiator_id=TEST_STRANGER_ID,
+        initiator_role="seller",
+        receiver_id=TEST_USER_ID,
+    )
+    repo.get_by_id = AsyncMock(return_value=escrow)
+    repo.update_status = AsyncMock(return_value=completed)
+    repo.save = AsyncMock(return_value=completed)
+
+    with (
+        patch("app.grpc_clients.release_funds", AsyncMock(return_value=True)) as mock_release,
+        patch("app.grpc_clients.get_user_wallet", AsyncMock(return_value="wallet-uuid")),
+        patch("app.service.publish", AsyncMock()),
+    ):
+        result = await svc.mark_complete(escrow.id, TEST_USER_ID)
+
+    assert result.status == "completed"
+    mock_release.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_mark_complete_organization_initiator_uses_org_wallet_owner(svc, repo):
+    """Organization-created seller escrow should release funds to org wallet on completion."""
+    escrow = make_escrow(
+        status="active",
+        initiator_actor_type="organization",
+        initiator_id=None,
+        initiator_org_id=TEST_ORG_ID,
+        initiator_role="seller",
+        receiver_id=TEST_USER_ID,
+    )
+    completed = make_escrow(
+        status="completed",
+        initiator_actor_type="organization",
+        initiator_id=None,
+        initiator_org_id=TEST_ORG_ID,
+        initiator_role="seller",
+        receiver_id=TEST_USER_ID,
+    )
+    repo.get_by_id = AsyncMock(return_value=escrow)
+    repo.update_status = AsyncMock(return_value=completed)
+    repo.save = AsyncMock(return_value=completed)
+
+    with (
+        patch(
+            "app.grpc_clients.get_user_wallet",
+            AsyncMock(side_effect=["buyer-wallet", "org-wallet"]),
+        ) as mock_get_wallet,
+        patch("app.grpc_clients.release_funds", AsyncMock(return_value=True)) as mock_release,
+        patch("app.service.publish", AsyncMock()),
+    ):
+        result = await svc.mark_complete(escrow.id, TEST_USER_ID)
+
+    assert result.status == "completed"
+    assert mock_get_wallet.await_args_list[0].args == (str(TEST_USER_ID), escrow.currency)
+    assert mock_get_wallet.await_args_list[1].args == (str(TEST_ORG_ID), escrow.currency)
+    mock_release.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_mark_complete_rejects_non_active_escrow(svc, repo):
+    escrow = make_escrow(status="invited", initiator_id=TEST_USER_ID, initiator_role="buyer")
+    repo.get_by_id = AsyncMock(return_value=escrow)
+    repo.update_status = AsyncMock()
+    repo.save = AsyncMock()
+
+    with (
+        patch("app.grpc_clients.release_funds", AsyncMock(return_value=True)) as mock_release,
+        patch("app.service.publish", AsyncMock()),
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            await svc.mark_complete(escrow.id, TEST_USER_ID)
+
+    assert exc_info.value.status_code == 400
+    assert "Cannot complete escrow" in str(exc_info.value.detail)
+    repo.update_status.assert_not_awaited()
+    repo.save.assert_not_awaited()
+    mock_release.assert_not_awaited()
 
 
 @pytest.mark.asyncio

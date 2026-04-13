@@ -11,6 +11,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import TypeAdapter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import grpc_clients
@@ -26,6 +27,7 @@ from app.models import (
     InvitationRejectRequest,
     InvitationResendRequest,
     MilestoneResponse,
+    OrganizationEscrowCreateRequest,
     PaginatedEscrowResponse,
 )
 from app.repository import EscrowRepository
@@ -39,6 +41,9 @@ router = APIRouter(prefix="/escrow", tags=["escrow"])
 ENVIRONMENT = os.getenv("ENVIRONMENT", "production").strip().lower()
 IS_DEVELOPMENT = ENVIRONMENT == "development"
 KYC_MIN_LEVEL = int(os.getenv("KYC_MIN_LEVEL", "1"))
+
+USER_ESCROW_CREATE_ADAPTER = TypeAdapter(EscrowCreateRequest)
+ORG_ESCROW_CREATE_ADAPTER = TypeAdapter(OrganizationEscrowCreateRequest)
 
 
 # ─── Dependency helpers ───────────────────────────────────────────────────────
@@ -193,9 +198,6 @@ async def build_escrow_response(
     return response
 
 
-# ─── Routes ───────────────────────────────────────────────────────────────────
-
-
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=InitializeEscrowResponse)
 async def initialize_escrow(
     body: EscrowCreateRequest,
@@ -203,16 +205,12 @@ async def initialize_escrow(
     svc: EscrowService = Depends(get_service),
 ):
     """Create a new escrow invitation (onetime / milestone / recurring)."""
-    actor_type = current_actor["actor_type"]
-    initiator_id = uuid.UUID(current_actor["user_id"]) if actor_type == "user" else None
-    authenticated_org_id = (
-        uuid.UUID(current_actor["org_id"]) if actor_type == "organization" else None
-    )
+    initiator_id = uuid.UUID(current_actor["user_id"])
     escrow, payment_url = await svc.initialize(
-        body,
-        actor_type,
-        initiator_id,
-        authenticated_org_id,
+        data=body,
+        actor_type="user",
+        initiator_id=initiator_id,
+        authenticated_org_id=None,
     )
     return InitializeEscrowResponse(
         escrow=await build_escrow_response(svc, escrow),
@@ -226,7 +224,7 @@ async def initialize_escrow(
     response_model=InitializeEscrowResponse,
 )
 async def initialize_organization_escrow(
-    body: EscrowCreateRequest,
+    body: OrganizationEscrowCreateRequest,
     org_actor: dict = Depends(get_org_create_actor_from_secret_key),
     svc: EscrowService = Depends(get_service),
 ):

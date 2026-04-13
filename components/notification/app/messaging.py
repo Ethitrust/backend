@@ -174,9 +174,12 @@ def _enrich_email_metadata(event_type: str, metadata: dict) -> dict:
     if event_type == "escrow.invite_received":
         escrow_id = enriched.get("escrow_id")
         invite_token = enriched.get("invite_token")
-        if isinstance(escrow_id, str) and isinstance(invite_token, str):
+        if isinstance(escrow_id, str):
             base_url = FRONTEND_URL.rstrip("/")
-            query = urlencode({"escrow_id": escrow_id, "token": invite_token})
+            query_params = {"escrow_id": escrow_id}
+            if isinstance(invite_token, str) and invite_token.strip():
+                query_params["token"] = invite_token
+            query = urlencode(query_params)
             enriched["invitation_url"] = f"{base_url}/invitation?{query}"
 
     return enriched

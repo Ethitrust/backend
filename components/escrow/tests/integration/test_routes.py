@@ -192,6 +192,31 @@ async def test_list_escrows_returns_created(client):
 
 
 @pytest.mark.asyncio
+async def test_org_secret_key_route_defaults_initiator_role_to_seller(client):
+    payload = {
+        "escrow_type": "onetime",
+        "title": "Website redesign",
+        "description": "Payment held until final UI and handoff are delivered",
+        "receiver_email": "nahom.network@gmail.com",
+        "currency": "ETB",
+        "amount": 50,
+        "acceptance_criteria": "Design files, source code, and documentation delivered",
+        "inspection_period": 72,
+        "dispute_window": 48,
+        "how_dispute_handled": "platform",
+        "who_pays_fees": "buyer",
+    }
+    create_resp = await client.post(
+        "/escrow/organization",
+        json=payload,
+        headers={"X-Org-Secret-Key": "sk_test_org_key"},
+    )
+    assert create_resp.status_code == 201, create_resp.text
+    created = create_resp.json()["escrow"]
+    assert created["initiator_role"] == "seller"
+
+
+@pytest.mark.asyncio
 async def test_list_escrows_includes_email_invitations_for_invited_user(client):
     """Invited users should see email-invited escrows before accepting."""
     payload = {
@@ -567,7 +592,6 @@ async def test_org_scoped_create_succeeds_with_org_api_key(client):
         "title": "Org key create",
         "currency": "ETB",
         "amount": 66_000,
-        "initiator_role": "seller",
         "receiver_id": "22222222-2222-4222-8222-22222222222b",
     }
     create_resp = await client.post("/escrow", json=payload, headers=ORG_KEY_HEADER)
@@ -585,7 +609,6 @@ async def test_org_scoped_create_succeeds_with_secret_key_route(client):
         "title": "Org header route create",
         "currency": "ETB",
         "amount": 78_000,
-        "initiator_role": "seller",
         "receiver_id": "22222222-2222-4222-8222-22222222222b",
     }
     create_resp = await client.post(
@@ -607,14 +630,13 @@ async def test_org_secret_key_route_allows_individual_seller_payload(client):
         "title": "Website redesign",
         "description": "Payment held until final UI and handoff are delivered",
         "receiver_email": "nahom.network@gmail.com",
-        "initiator_role": "buyer",
         "currency": "ETB",
         "amount": 50,
         "acceptance_criteria": "Design files, source code, and documentation delivered",
         "inspection_period": 72,
         "dispute_window": 48,
         "how_dispute_handled": "platform",
-        "who_pays_fees": "buyer",
+        "who_pays_fees": "seller",
     }
     create_resp = await client.post(
         "/escrow/organization",
@@ -628,6 +650,26 @@ async def test_org_secret_key_route_allows_individual_seller_payload(client):
     assert created["initiator_id"] is None
     assert created["title"] == "Website redesign"
     assert created["amount"] == 50
+
+
+@pytest.mark.asyncio
+async def test_org_secret_key_route_rejects_buyer_initiator_role(client):
+    payload = {
+        "escrow_type": "onetime",
+        "title": "Org buyer forbidden",
+        "receiver_email": "nahom.network@gmail.com",
+        "initiator_role": "buyer",
+        "currency": "ETB",
+        "amount": 50,
+    }
+    create_resp = await client.post(
+        "/escrow/organization",
+        json=payload,
+        headers={"X-Org-Secret-Key": "sk_test_org_key"},
+    )
+    assert create_resp.status_code == 422, create_resp.text
+    detail = create_resp.json()["detail"]
+    assert any("initiator_role" in str(item) for item in detail)
 
 
 @pytest.mark.asyncio

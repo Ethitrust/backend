@@ -9,20 +9,27 @@ import uuid
 from fastapi import HTTPException, status
 from passlib.context import CryptContext
 
+from app import grpc_clients
 from app.db import Organization, OrganizationMember
 from app.messaging import publish
 from app.models import (
     MemberInvite,
     OrgCreate,
+    OrgWalletWithdrawRequest,
     RolePermissionsUpdate,
     WebhookUpdate,
 )
 from app.rbac import (
-    ORG_KEYS_ROTATE,
-    ORG_MEMBER_INVITE,
-    ORG_MEMBER_REMOVE,
-    ORG_SETTINGS_WEBHOOK_UPDATE,
+    APIKEY_ROTATE,
+    BALANCE_PAYOUT_REQUEST,
+    BALANCE_READ,
+    ORG_READ,
     PERMISSION_CATALOG,
+    SYSTEM_ROLES,
+    USER_INVITE,
+    USER_REMOVE,
+    USER_ROLE_CHANGE,
+    WEBHOOK_MANAGE,
 )
 from app.repository import OrgRepository
 
@@ -81,6 +88,11 @@ class OrgService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You are not a member of this organization",
             )
+        if member.role not in SYSTEM_ROLES:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Member role is invalid",
+            )
         return member.role
 
     async def _require_permission(
@@ -124,6 +136,18 @@ class OrgService:
         await self.repo.add_member(member)
 
         try:
+            await grpc_clients.ensure_owner_wallet(str(org.id), "ETB")
+        except RuntimeError as exc:
+            logger.exception(
+                "Failed to provision default wallet for org_id=%s",
+                org.id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Unable to provision organization wallet",
+            ) from exc
+
+        try:
             await publish(
                 "organization.created",
                 {
@@ -140,17 +164,8 @@ class OrgService:
         return org, sk
 
     async def get_org(self, org_id: uuid.UUID, user_id: uuid.UUID) -> Organization:
-        org = await self._require_org(org_id)
-        if org.owner_id == user_id:
-            return org
-
-        member = await self.repo.get_member(org_id, user_id)
-        if member is None:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied",
-            )
-        return org
+        await self._require_permission(org_id, user_id, ORG_READ)
+        return await self._require_org(org_id)
 
     async def list_orgs(self, user_id: uuid.UUID) -> list[Organization]:
         return await self.repo.list_by_owner(user_id)
@@ -158,8 +173,7 @@ class OrgService:
     async def rotate_secret_key(
         self, org_id: uuid.UUID, user_id: uuid.UUID
     ) -> tuple[Organization, str]:
-        await self.repo.ensure_default_roles(org_id)
-        await self._require_permission(org_id, user_id, ORG_KEYS_ROTATE)
+        await self._require_permission(org_id, user_id, APIKEY_ROTATE)
         org = await self._require_org(org_id)
         pk, sk = _generate_key_pair("test" in org.public_key)
         org = await self.repo.update_secret_key_hash(org_id, pwd_ctx.hash(sk), pk)
@@ -168,21 +182,18 @@ class OrgService:
     async def update_webhook(
         self, org_id: uuid.UUID, user_id: uuid.UUID, data: WebhookUpdate
     ) -> Organization:
-        await self.repo.ensure_default_roles(org_id)
-        await self._require_permission(org_id, user_id, ORG_SETTINGS_WEBHOOK_UPDATE)
+        await self._require_permission(org_id, user_id, WEBHOOK_MANAGE)
         return await self.repo.update_webhook(org_id, data.webhook_url, data.webhook_secret)
 
     async def invite_member(
         self, org_id: uuid.UUID, user_id: uuid.UUID, data: MemberInvite
     ) -> OrganizationMember:
-        await self.repo.ensure_default_roles(org_id)
-        await self._require_permission(org_id, user_id, ORG_MEMBER_INVITE)
+        await self._require_permission(org_id, user_id, USER_INVITE)
 
-        role = await self.repo.get_role_by_name(org_id, data.role)
-        if role is None:
+        if data.role not in {"admin", "member"}:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Role not found",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only admin or member role can be assigned",
             )
 
         member = OrganizationMember(org_id=org_id, user_id=data.user_id, role=data.role)
@@ -191,8 +202,7 @@ class OrgService:
     async def remove_member(
         self, org_id: uuid.UUID, user_id: uuid.UUID, target_user_id: uuid.UUID
     ) -> None:
-        await self.repo.ensure_default_roles(org_id)
-        await self._require_permission(org_id, user_id, ORG_MEMBER_REMOVE)
+        await self._require_permission(org_id, user_id, USER_REMOVE)
 
         org = await self._require_org(org_id)
         if org.owner_id == target_user_id:
@@ -205,24 +215,15 @@ class OrgService:
 
     async def list_roles(self, org_id: uuid.UUID, user_id: uuid.UUID):
         await self._require_owner(org_id, user_id)
-        await self.repo.ensure_default_roles(org_id)
-
-        roles = await self.repo.list_roles(org_id)
-        result: list[dict] = []
-        for role in roles:
-            permissions = await self.repo.list_permissions_for_role(role.id)
-            result.append(
-                {
-                    "id": role.id,
-                    "org_id": role.org_id,
-                    "name": role.name,
-                    "description": role.description,
-                    "is_system": role.is_system,
-                    "permissions": sorted(permissions),
-                    "created_at": role.created_at,
-                }
-            )
-        return result
+        role_permissions = await self.repo.list_role_permissions(org_id)
+        return [
+            {
+                "role": role_name,
+                "permissions": role_permissions[role_name],
+                "is_system": True,
+            }
+            for role_name in SYSTEM_ROLES
+        ]
 
     async def update_role_permissions(
         self,
@@ -232,32 +233,20 @@ class OrgService:
         data: RolePermissionsUpdate,
     ) -> dict:
         await self._require_owner(org_id, user_id)
-        await self.repo.ensure_default_roles(org_id)
 
-        role = await self.repo.get_role_by_name(org_id, role_name)
-        if role is None:
+        if role_name not in SYSTEM_ROLES:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Role not found",
             )
 
-        if not role.is_system:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Only system role permissions can be modified",
-            )
-
         permissions = self._validate_permissions(data.permissions)
-        await self.repo.set_role_permissions(role.id, permissions)
+        await self.repo.set_role_permissions(org_id, role_name, permissions)
 
         return {
-            "id": role.id,
-            "org_id": role.org_id,
-            "name": role.name,
-            "description": role.description,
-            "is_system": role.is_system,
+            "role": role_name,
             "permissions": permissions,
-            "created_at": role.created_at,
+            "is_system": True,
         }
 
     async def assign_member_role(
@@ -267,14 +256,13 @@ class OrgService:
         target_user_id: uuid.UUID,
         role_name: str,
     ) -> OrganizationMember:
-        org = await self._require_owner(org_id, user_id)
-        await self.repo.ensure_default_roles(org_id)
+        await self._require_permission(org_id, user_id, USER_ROLE_CHANGE)
+        org = await self._require_org(org_id)
 
-        role = await self.repo.get_role_by_name(org_id, role_name)
-        if role is None:
+        if role_name not in {"admin", "member"}:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Role not found",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only admin or member role can be assigned",
             )
 
         if target_user_id == org.owner_id:
@@ -310,3 +298,85 @@ class OrgService:
 
     async def get_by_public_key(self, pk: str) -> Organization | None:
         return await self.repo.get_by_public_key(pk)
+
+    async def get_org_wallet(self, org_id: uuid.UUID, actor_id: uuid.UUID) -> dict:
+        await self._require_permission(org_id, actor_id, BALANCE_READ)
+
+        try:
+            wallet_id = await grpc_clients.ensure_owner_wallet(str(org_id), "ETB")
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Unable to fetch organization wallet",
+            ) from exc
+
+        try:
+            wallet_uuid = uuid.UUID(wallet_id)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Organization wallet returned an invalid id",
+            ) from exc
+
+        return {
+            "org_id": org_id,
+            "wallet_id": wallet_uuid,
+            "currency": "ETB",
+        }
+
+    async def get_org_wallet_balance(self, org_id: uuid.UUID, actor_id: uuid.UUID) -> dict:
+        wallet = await self.get_org_wallet(org_id, actor_id)
+
+        try:
+            balance = await grpc_clients.get_wallet_balance(str(wallet["wallet_id"]))
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Unable to fetch organization wallet balance",
+            ) from exc
+
+        return {
+            **wallet,
+            "balance": balance["balance"],
+            "locked_balance": balance["locked_balance"],
+            "currency": balance["currency"] or wallet["currency"],
+        }
+
+    async def withdraw_org_wallet(
+        self,
+        org_id: uuid.UUID,
+        actor_id: uuid.UUID,
+        data: OrgWalletWithdrawRequest,
+    ) -> dict:
+        await self._require_permission(org_id, actor_id, BALANCE_PAYOUT_REQUEST)
+        wallet = await self.get_org_wallet(org_id, actor_id)
+        reference = data.reference or f"org-withdraw-{uuid.uuid4()}"
+
+        try:
+            result = await grpc_clients.deduct_wallet_balance(
+                wallet_id=wallet["wallet_id"],
+                amount=data.amount,
+                reference=reference,
+                provider=data.provider,
+            )
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
+
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result.get("message") or "Withdrawal failed",
+            )
+
+        return {
+            "wallet_id": wallet["wallet_id"],
+            "currency": wallet["currency"],
+            "amount": data.amount,
+            "provider": data.provider,
+            "reference": reference,
+            "new_balance": int(result.get("new_balance", 0)),
+            "message": result.get("message"),
+        }

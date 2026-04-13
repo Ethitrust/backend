@@ -18,6 +18,10 @@ from app.models import (
     OrgCreate,
     OrgKeyResponse,
     OrgResponse,
+    OrgWalletBalanceResponse,
+    OrgWalletResponse,
+    OrgWalletWithdrawRequest,
+    OrgWalletWithdrawResponse,
     RolePermissionsUpdate,
     RoleResponse,
     WebhookUpdate,
@@ -103,6 +107,40 @@ async def get_org(
     user_id = uuid.UUID(current_user["user_id"])
     org = await svc.get_org(org_id, user_id)
     return OrgResponse.model_validate(org)
+
+
+@router.get("/{org_id}/wallet", response_model=OrgWalletResponse)
+async def get_org_wallet(
+    org_id: uuid.UUID,
+    current_user: dict = Depends(get_current_user),
+    svc: OrgService = Depends(get_service),
+):
+    user_id = uuid.UUID(current_user["user_id"])
+    wallet = await svc.get_org_wallet(org_id, user_id)
+    return OrgWalletResponse.model_validate(wallet)
+
+
+@router.get("/{org_id}/wallet/balance", response_model=OrgWalletBalanceResponse)
+async def get_org_wallet_balance(
+    org_id: uuid.UUID,
+    current_user: dict = Depends(get_current_user),
+    svc: OrgService = Depends(get_service),
+):
+    user_id = uuid.UUID(current_user["user_id"])
+    balance = await svc.get_org_wallet_balance(org_id, user_id)
+    return OrgWalletBalanceResponse.model_validate(balance)
+
+
+@router.post("/{org_id}/wallet/withdraw", response_model=OrgWalletWithdrawResponse)
+async def withdraw_org_wallet(
+    org_id: uuid.UUID,
+    body: OrgWalletWithdrawRequest,
+    current_user: dict = Depends(get_current_user),
+    svc: OrgService = Depends(get_service),
+):
+    user_id = uuid.UUID(current_user["user_id"])
+    withdrawal = await svc.withdraw_org_wallet(org_id, user_id, body)
+    return OrgWalletWithdrawResponse.model_validate(withdrawal)
 
 
 # TODO: implement proper access control for the org-member should not be accessable by just any user

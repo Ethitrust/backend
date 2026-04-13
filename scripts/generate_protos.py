@@ -50,7 +50,7 @@ PROTO_TARGETS: dict[str, list[str]] = {
         "components/wallet/proto",
         "components/escrow/proto",
         "components/payout/proto",
-        "components/dispute/proto",
+        "components/organization/proto",
     ],
     # Server: escrow | Clients: dispute
     "escrow.proto": [

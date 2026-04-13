@@ -34,6 +34,7 @@ from app.models import (
     InvitationResendRequest,
     MilestoneEscrowCreate,
     OneTimeEscrowCreate,
+    OrganizationEscrowCreateRequest,
     RecurringEscrowCreate,
 )
 from app.repository import EscrowRepository
@@ -140,6 +141,13 @@ class EscrowService:
     def __init__(self, repo: EscrowRepository) -> None:
         self.repo = repo
 
+    @staticmethod
+    def _resolve_initiator_wallet_owner_id(escrow: Escrow) -> str | None:
+        """Return initiator wallet owner id for user or organization actor types."""
+        if escrow.initiator_actor_type == "organization":
+            return str(escrow.initiator_org_id) if escrow.initiator_org_id else None
+        return str(escrow.initiator_id) if escrow.initiator_id else None
+
     def _resolve_buyer_and_seller_ids(
         self,
         escrow: Escrow,
@@ -236,7 +244,7 @@ class EscrowService:
 
     async def initialize(
         self,
-        data: EscrowCreateRequest,
+        data: EscrowCreateRequest | OrganizationEscrowCreateRequest,
         actor_type: str,
         initiator_id: uuid.UUID | None,
         authenticated_org_id: uuid.UUID | None,
@@ -267,21 +275,21 @@ class EscrowService:
             create_initiator_id = initiator_id
             create_initiator_org_id = None
 
-        if isinstance(data, OneTimeEscrowCreate):
+        if data.escrow_type == "onetime":
             return await self.create_onetime(
                 data,
                 create_initiator_id,
                 initiator_actor_type,
                 create_initiator_org_id,
             )
-        if isinstance(data, MilestoneEscrowCreate):
+        if data.escrow_type == "milestone":
             return await self.create_milestone_escrow(
                 data,
                 create_initiator_id,
                 initiator_actor_type,
                 create_initiator_org_id,
             )
-        if isinstance(data, RecurringEscrowCreate):
+        if data.escrow_type == "recurring":
             return await self.create_recurring(
                 data,
                 create_initiator_id,
@@ -659,18 +667,37 @@ class EscrowService:
 
     async def mark_complete(self, escrow_id: uuid.UUID, user_id: uuid.UUID) -> Escrow:
         escrow = await self.get_escrow(escrow_id, user_id)
-        if escrow.initiator_id != user_id or escrow.initiator_role != "buyer":
+        if escrow.status != "active":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot complete escrow in status '{escrow.status}'",
+            )
+
+        is_buyer = (escrow.initiator_role == "buyer" and escrow.initiator_id == user_id) or (
+            escrow.initiator_role == "seller" and escrow.receiver_id == user_id
+        )
+
+        if not is_buyer:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only the buyer (initiator) can mark an escrow as complete",
+                detail="Only the buyer can mark an escrow as complete",
             )
-        buyer_id, seller_id = self._resolve_buyer_and_seller_ids(escrow)
+
+        if escrow.initiator_role == "buyer":
+            buyer_wallet_owner_id = self._resolve_initiator_wallet_owner_id(escrow)
+            seller_wallet_owner_id = str(escrow.receiver_id) if escrow.receiver_id else None
+        else:
+            buyer_wallet_owner_id = str(escrow.receiver_id) if escrow.receiver_id else None
+            seller_wallet_owner_id = self._resolve_initiator_wallet_owner_id(escrow)
+
         buyer_wallet = (
-            await grpc_clients.get_user_wallet(str(buyer_id), escrow.currency) if buyer_id else None
+            await grpc_clients.get_user_wallet(buyer_wallet_owner_id, escrow.currency)
+            if buyer_wallet_owner_id
+            else None
         )
         seller_wallet = (
-            await grpc_clients.get_user_wallet(str(seller_id), escrow.currency)
-            if seller_id
+            await grpc_clients.get_user_wallet(seller_wallet_owner_id, escrow.currency)
+            if seller_wallet_owner_id
             else None
         )
         if not buyer_wallet or not seller_wallet:

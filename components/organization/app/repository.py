@@ -10,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import (
     Organization,
     OrganizationMember,
-    OrganizationRole,
     OrganizationRolePermission,
 )
 from app.rbac import DEFAULT_ROLE_PERMISSIONS, SYSTEM_ROLES
@@ -121,61 +120,44 @@ class OrgRepository:
             await self.db.delete(member)
             await self.db.flush()
 
-    async def list_roles(self, org_id: uuid.UUID) -> list[OrganizationRole]:
-        r = await self.db.execute(
-            select(OrganizationRole)
-            .where(OrganizationRole.org_id == org_id)
-            .order_by(OrganizationRole.created_at.asc())
-        )
-        return list(r.scalars().all())
-
-    async def get_role_by_name(
+    async def list_permissions_for_role_name(
         self,
         org_id: uuid.UUID,
         role_name: str,
-    ) -> OrganizationRole | None:
+    ) -> list[str]:
+        if role_name not in SYSTEM_ROLES:
+            return []
+
         r = await self.db.execute(
-            select(OrganizationRole).where(
-                OrganizationRole.org_id == org_id,
-                OrganizationRole.name == role_name,
+            select(OrganizationRolePermission.permission_key).where(
+                OrganizationRolePermission.org_id == org_id,
+                OrganizationRolePermission.role == role_name,
             )
         )
-        return r.scalar_one_or_none()
+        overridden = sorted(set(r.scalars().all()))
+        if overridden:
+            return overridden
 
-    async def create_role(
-        self,
-        org_id: uuid.UUID,
-        name: str,
-        description: str | None,
-        is_system: bool = False,
-    ) -> OrganizationRole:
-        role = OrganizationRole(
-            org_id=org_id,
-            name=name,
-            description=description,
-            is_system=is_system,
-        )
-        self.db.add(role)
-        await self.db.flush()
-        await self.db.refresh(role)
-        return role
-
-    async def delete_role(self, role: OrganizationRole) -> None:
-        await self.db.delete(role)
-        await self.db.flush()
+        return sorted(DEFAULT_ROLE_PERMISSIONS[role_name])
 
     async def set_role_permissions(
         self,
-        role_id: uuid.UUID,
+        org_id: uuid.UUID,
+        role_name: str,
         permissions: list[str],
     ) -> list[OrganizationRolePermission]:
         await self.db.execute(
-            delete(OrganizationRolePermission).where(OrganizationRolePermission.role_id == role_id)
+            delete(OrganizationRolePermission).where(
+                OrganizationRolePermission.org_id == org_id,
+                OrganizationRolePermission.role == role_name,
+            )
         )
+
         records: list[OrganizationRolePermission] = []
-        for permission_key in permissions:
+        for permission_key in sorted(set(permissions)):
             record = OrganizationRolePermission(
-                role_id=role_id,
+                org_id=org_id,
+                role=role_name,
                 permission_key=permission_key,
             )
             self.db.add(record)
@@ -184,45 +166,19 @@ class OrgRepository:
         await self.db.flush()
         return records
 
-    async def list_permissions_for_role(self, role_id: uuid.UUID) -> list[str]:
-        r = await self.db.execute(
-            select(OrganizationRolePermission.permission_key).where(
-                OrganizationRolePermission.role_id == role_id
-            )
-        )
-        return list(r.scalars().all())
-
-    async def list_permissions_for_role_name(
-        self,
-        org_id: uuid.UUID,
-        role_name: str,
-    ) -> list[str]:
-        role = await self.get_role_by_name(org_id, role_name)
-        if role is None:
-            return []
-        return await self.list_permissions_for_role(role.id)
+    async def list_role_permissions(self, org_id: uuid.UUID) -> dict[str, list[str]]:
+        result: dict[str, list[str]] = {}
+        for role_name in SYSTEM_ROLES:
+            result[role_name] = await self.list_permissions_for_role_name(org_id, role_name)
+        return result
 
     async def ensure_default_roles(self, org_id: uuid.UUID) -> None:
-        """Ensure default system roles exist, without overwriting customized permissions."""
-        existing_roles = await self.list_roles(org_id)
-        existing_by_name = {role.name: role for role in existing_roles}
-
-        for role_name in SYSTEM_ROLES:
-            role = existing_by_name.get(role_name)
-            if role is None:
-                role = await self.create_role(
-                    org_id=org_id,
-                    name=role_name,
-                    description=f"System role: {role_name}",
-                    is_system=True,
-                )
-                existing_by_name[role_name] = role
-                await self.set_role_permissions(
-                    role.id,
-                    sorted(DEFAULT_ROLE_PERMISSIONS[role_name]),
-                )
+        # Roles are hardcoded and do not require persistence.
+        _ = org_id
 
     async def is_role_used(self, org_id: uuid.UUID, role_name: str) -> bool:
+        if role_name not in SYSTEM_ROLES:
+            return False
         r = await self.db.execute(
             select(OrganizationMember).where(
                 OrganizationMember.org_id == org_id,

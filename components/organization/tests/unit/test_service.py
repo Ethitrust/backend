@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from app.models import OrgCreate
@@ -39,3 +40,17 @@ async def test_verify_secret_key_returns_none_for_invalid_key(db):
     matched = await service.verify_secret_key("sk_test_invalid_value")
 
     assert matched is None
+
+
+@pytest.mark.asyncio
+async def test_create_org_provisions_wallet_with_org_id(db):
+    service = OrgService(OrgRepository(db))
+    owner_id = uuid.UUID("11111111-1111-1111-1111-111111111111")
+
+    with patch("app.service.grpc_clients.ensure_owner_wallet", AsyncMock()) as ensure_wallet:
+        org, _ = await service.create_org(
+            owner_id,
+            OrgCreate(name="Wallet Provision Org", slug="wallet-provision-org", is_test=True),
+        )
+
+    ensure_wallet.assert_awaited_once_with(str(org.id), "ETB")
