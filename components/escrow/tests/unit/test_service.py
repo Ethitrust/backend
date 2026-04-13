@@ -95,6 +95,21 @@ def svc(repo):
     return EscrowService(repo)
 
 
+@pytest.fixture(autouse=True)
+def mock_fee_calculation(monkeypatch):
+    async def _fake_calculate_fee(amount: int, who_pays: str) -> dict:
+        fee = max(100, int(amount * 0.015))
+        normalized = who_pays.lower().strip()
+        if normalized == "buyer":
+            return {"fee_amount": fee, "buyer_fee": fee, "seller_fee": 0}
+        if normalized == "seller":
+            return {"fee_amount": fee, "buyer_fee": 0, "seller_fee": fee}
+        half = fee // 2
+        return {"fee_amount": fee, "buyer_fee": half, "seller_fee": fee - half}
+
+    monkeypatch.setattr("app.grpc_clients.calculate_fee", _fake_calculate_fee)
+
+
 # ─── Tests ────────────────────────────────────────────────────────────────────
 
 
@@ -677,7 +692,7 @@ async def test_activate_pending_escrows_for_buyer_locks_and_activates(svc, repo)
     assert escrow.funded_at is not None
     mock_lock.assert_awaited_once_with(
         wallet_id="wallet-1",
-        amount=escrow.amount,
+        amount=escrow.amount + escrow.fee_amount,
         reference=escrow.transaction_ref,
         escrow_id=str(escrow.id),
     )

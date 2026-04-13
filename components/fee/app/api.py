@@ -30,4 +30,4 @@ async def calculate_fee(
     svc: FeeService = Depends(get_service),
 ):
     """Calculate platform fee for a given amount and payer configuration."""
-    return svc.calculate_fee(body.amount, body.who_pays)
+    return await svc.calculate_fee(body.amount, body.who_pays)

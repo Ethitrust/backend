@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import uuid
-from typing import Optional
 
 from app.db import FeeLedger
+from app.grpc_client import get_fee_policy
 from app.models import (
     FeeCalculateResponse,
     FeeRecordRequest,
@@ -18,21 +18,35 @@ class FeeService:
     def __init__(self, repo: FeeRepository) -> None:
         self.repo = repo
 
-    def calculate_fee(self, amount: int, who_pays: str) -> FeeCalculateResponse:
-        raw = int(amount * PLATFORM_FEE_PERCENT / 100)
-        fee = max(MIN_FEE_AMOUNT, min(raw, MAX_FEE_AMOUNT))
+    async def calculate_fee(self, amount: int, who_pays: str) -> FeeCalculateResponse:
+        normalized_who_pays = who_pays.lower().strip()
+        if normalized_who_pays == "both":
+            normalized_who_pays = "split"
 
-        if who_pays == "buyer":
-            return FeeCalculateResponse(fee_amount=fee, buyer_fee=fee, seller_fee=0)
-        elif who_pays == "seller":
-            return FeeCalculateResponse(fee_amount=fee, buyer_fee=0, seller_fee=fee)
-        elif who_pays == "both":
-            half = fee // 2
+        try:
+            policy = await get_fee_policy(amount, normalized_who_pays)
+            fee = int(policy["fee_amount"])
+            buyer_fee = int(policy["buyer_fee"])
+            seller_fee = int(policy["seller_fee"])
             return FeeCalculateResponse(
-                fee_amount=fee, buyer_fee=half, seller_fee=fee - half
+                fee_amount=fee,
+                buyer_fee=buyer_fee,
+                seller_fee=seller_fee,
             )
-        else:
-            return FeeCalculateResponse(fee_amount=fee, buyer_fee=0, seller_fee=0)
+        except RuntimeError:
+            # Admin service unavailable or not configured; use local defaults
+            raw = int(amount * PLATFORM_FEE_PERCENT / 100)
+            fee = max(MIN_FEE_AMOUNT, min(raw, MAX_FEE_AMOUNT))
+
+        if normalized_who_pays == "buyer":
+            return FeeCalculateResponse(fee_amount=fee, buyer_fee=fee, seller_fee=0)
+        elif normalized_who_pays == "seller":
+            return FeeCalculateResponse(fee_amount=fee, buyer_fee=0, seller_fee=fee)
+        elif normalized_who_pays == "split":
+            half = fee // 2
+            return FeeCalculateResponse(fee_amount=fee, buyer_fee=half, seller_fee=fee - half)
+
+        raise ValueError("who_pays must be one of: buyer, seller, split")
 
     async def record_fee(self, data: FeeRecordRequest) -> FeeLedger:
         entry = FeeLedger(

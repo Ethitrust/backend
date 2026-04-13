@@ -34,6 +34,16 @@ class FeeServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
+        self.CalculateFee = channel.unary_unary(
+                '/fee.FeeService/CalculateFee',
+                request_serializer=fee__pb2.CalculateFeeRequest.SerializeToString,
+                response_deserializer=fee__pb2.CalculateFeeResponse.FromString,
+                _registered_method=True)
+        self.RecordFee = channel.unary_unary(
+                '/fee.FeeService/RecordFee',
+                request_serializer=fee__pb2.RecordFeeRequest.SerializeToString,
+                response_deserializer=fee__pb2.FeeLedgerResponse.FromString,
+                _registered_method=True)
         self.RefundFeeForEscrow = channel.unary_unary(
                 '/fee.FeeService/RefundFeeForEscrow',
                 request_serializer=fee__pb2.RefundFeeForEscrowRequest.SerializeToString,
@@ -44,6 +54,18 @@ class FeeServiceStub(object):
 class FeeServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
+    def CalculateFee(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def RecordFee(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def RefundFeeForEscrow(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -53,6 +75,16 @@ class FeeServiceServicer(object):
 
 def add_FeeServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
+            'CalculateFee': grpc.unary_unary_rpc_method_handler(
+                    servicer.CalculateFee,
+                    request_deserializer=fee__pb2.CalculateFeeRequest.FromString,
+                    response_serializer=fee__pb2.CalculateFeeResponse.SerializeToString,
+            ),
+            'RecordFee': grpc.unary_unary_rpc_method_handler(
+                    servicer.RecordFee,
+                    request_deserializer=fee__pb2.RecordFeeRequest.FromString,
+                    response_serializer=fee__pb2.FeeLedgerResponse.SerializeToString,
+            ),
             'RefundFeeForEscrow': grpc.unary_unary_rpc_method_handler(
                     servicer.RefundFeeForEscrow,
                     request_deserializer=fee__pb2.RefundFeeForEscrowRequest.FromString,
@@ -68,6 +100,60 @@ def add_FeeServiceServicer_to_server(servicer, server):
  # This class is part of an EXPERIMENTAL API.
 class FeeService(object):
     """Missing associated documentation comment in .proto file."""
+
+    @staticmethod
+    def CalculateFee(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/fee.FeeService/CalculateFee',
+            fee__pb2.CalculateFeeRequest.SerializeToString,
+            fee__pb2.CalculateFeeResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def RecordFee(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/fee.FeeService/RecordFee',
+            fee__pb2.RecordFeeRequest.SerializeToString,
+            fee__pb2.FeeLedgerResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
 
     @staticmethod
     def RefundFeeForEscrow(request,

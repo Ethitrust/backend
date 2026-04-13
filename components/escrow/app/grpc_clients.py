@@ -31,6 +31,8 @@ if str(_PROTO_DIR) not in proto_paths:
 
 import proto.auth_pb2 as auth_pb2
 import proto.auth_pb2_grpc as auth_pb2_grpc
+import proto.fee_pb2 as fee_pb2
+import proto.fee_pb2_grpc as fee_pb2_grpc
 import proto.organization_pb2 as organization_pb2
 import proto.organization_pb2_grpc as organization_pb2_grpc
 import proto.payment_provider_pb2 as payment_provider_pb2
@@ -45,9 +47,66 @@ USER_GRPC = os.getenv("USER_GRPC", "user-service:50051")
 WALLET_GRPC = os.getenv("WALLET_GRPC", "wallet-service:50051")
 PAYMENT_GRPC = os.getenv("PAYMENT_GRPC", "payment-provider-service:50051")
 ORGANIZATION_GRPC = os.getenv("ORGANIZATION_GRPC", "organization-service:50051")
+FEE_GRPC = os.getenv("FEE_GRPC", "fee-service:50051")
 
 
 logger = logging.getLogger(__name__)
+
+
+async def calculate_fee(amount: int, who_pays: str) -> dict:
+    """Calculate fee using fee service as single source of truth."""
+    request = fee_pb2.CalculateFeeRequest(
+        amount=amount,
+        who_pays=who_pays,
+    )
+    try:
+        async with grpc.aio.insecure_channel(FEE_GRPC) as channel:
+            stub = fee_pb2_grpc.FeeServiceStub(channel)
+            response = await stub.CalculateFee(request, timeout=5.0)
+    except grpc.aio.AioRpcError as exc:
+        raise RuntimeError(exc.details() or "Unable to calculate fee") from exc
+
+    return {
+        "fee_amount": response.fee_amount,
+        "buyer_fee": response.buyer_fee,
+        "seller_fee": response.seller_fee,
+    }
+
+
+async def record_fee(
+    escrow_id: str,
+    fee_amount: int,
+    currency: str,
+    paid_by: str,
+    fee_type: str = "escrow_fee",
+    org_id: str | None = None,
+) -> dict:
+    """Persist a collected fee entry in fee service."""
+    request = fee_pb2.RecordFeeRequest(
+        escrow_id=escrow_id,
+        fee_amount=fee_amount,
+        currency=currency,
+        paid_by=paid_by,
+        fee_type=fee_type,
+        org_id=org_id or "",
+    )
+    try:
+        async with grpc.aio.insecure_channel(FEE_GRPC) as channel:
+            stub = fee_pb2_grpc.FeeServiceStub(channel)
+            response = await stub.RecordFee(request, timeout=5.0)
+    except grpc.aio.AioRpcError as exc:
+        raise RuntimeError(exc.details() or "Unable to record fee") from exc
+
+    return {
+        "id": response.id,
+        "escrow_id": response.escrow_id,
+        "fee_type": response.fee_type,
+        "amount": response.amount,
+        "currency": response.currency,
+        "paid_by": response.paid_by,
+        "status": response.status,
+        "created_at": response.created_at,
+    }
 
 
 async def validate_token(token: str) -> dict:

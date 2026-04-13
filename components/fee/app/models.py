@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 class FeeCalculateRequest(BaseModel):
     amount: int
-    who_pays: Literal["buyer", "seller", "both"]  # buyer | seller | both
+    who_pays: Literal["buyer", "seller", "split"]
 
 
 class FeeCalculateResponse(BaseModel):

@@ -1,0 +1,21 @@
+syntax = "proto3";
+package admin;
+
+service AdminConfigService {
+  rpc GetFeePolicy (FeePolicyRequest) returns (FeePolicyResponse);
+}
+
+message FeePolicyRequest {
+  int64 amount = 1;
+  string who_pays = 2;
+}
+
+message FeePolicyResponse {
+  int64 fee_amount = 1;
+  int64 buyer_fee = 2;
+  int64 seller_fee = 3;
+  double platform_fee_percent = 4;
+  int64 min_fee_amount = 5;
+  int64 max_fee_amount = 6;
+  bool used_override = 7;
+}

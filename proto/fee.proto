@@ -2,7 +2,29 @@ syntax = "proto3";
 package fee;
 
 service FeeService {
+  rpc CalculateFee (CalculateFeeRequest) returns (CalculateFeeResponse);
+  rpc RecordFee (RecordFeeRequest) returns (FeeLedgerResponse);
   rpc RefundFeeForEscrow (RefundFeeForEscrowRequest) returns (RefundFeeForEscrowResponse);
+}
+
+message CalculateFeeRequest {
+  int64 amount = 1;
+  string who_pays = 2;
+}
+
+message CalculateFeeResponse {
+  int64 fee_amount = 1;
+  int64 buyer_fee = 2;
+  int64 seller_fee = 3;
+}
+
+message RecordFeeRequest {
+  string escrow_id = 1;
+  int64 fee_amount = 2;
+  string currency = 3;
+  string paid_by = 4;
+  string fee_type = 5;
+  string org_id = 6;
 }
 
 message RefundFeeForEscrowRequest {

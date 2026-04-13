@@ -18,19 +18,17 @@ async def test_health(client):
 
 @pytest.mark.asyncio
 async def test_calculate_fee_buyer(client):
-    r = await client.post(
-        "/fee/calculate", json={"amount": 100000, "who_pays": "buyer"}
-    )
+    r = await client.post("/fee/calculate", json={"amount": 100000, "who_pays": "buyer"})
     assert r.status_code == 200
     data = r.json()
-    assert data["fee_amount"] == 1500  # 1.5% of 100000
-    assert data["buyer_fee"] == 1500
+    assert data["fee_amount"] == 1000  # capped by default max fee (10 birr)
+    assert data["buyer_fee"] == 1000
     assert data["seller_fee"] == 0
 
 
 @pytest.mark.asyncio
 async def test_calculate_fee_both(client):
-    r = await client.post("/fee/calculate", json={"amount": 100000, "who_pays": "both"})
+    r = await client.post("/fee/calculate", json={"amount": 100000, "who_pays": "split"})
     assert r.status_code == 200
     data = r.json()
     assert data["buyer_fee"] + data["seller_fee"] == data["fee_amount"]

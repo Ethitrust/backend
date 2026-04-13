@@ -83,6 +83,10 @@ from app.repository import AdminRepository
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_PLATFORM_FEE_PERCENT = 1.5
+_DEFAULT_MIN_FEE_AMOUNT = 100  # 1 birr in smallest denomination
+_DEFAULT_MAX_FEE_AMOUNT = 1000  # 10 birr in smallest denomination
+
 _VERIFY_OVERRIDE_ACTION = "users.verification.override"
 _BULK_BAN_ACTION = "users.bulk.ban"
 _DISPUTE_ACTIVE_STATUSES = {"open", "under_review"}
@@ -401,6 +405,77 @@ class AdminService:
             errors.append("fees.min_fee_amount cannot be greater than fees.max_fee_amount")
 
         return normalized, errors
+
+    async def resolve_fee_policy(
+        self,
+        *,
+        amount: int,
+        who_pays: str,
+    ) -> dict[str, Any]:
+        if amount <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="amount must be greater than 0",
+            )
+
+        normalized_who_pays = who_pays.lower().strip()
+        if normalized_who_pays == "both":
+            normalized_who_pays = "split"
+        if normalized_who_pays not in {"buyer", "seller", "split"}:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="who_pays must be one of: buyer, seller, split",
+            )
+
+        existing_values = await self._get_system_config_value_map()
+
+        raw_percent = self._coerce_number(existing_values.get("fees.platform_fee_percent"))
+        raw_min_fee = self._coerce_int(existing_values.get("fees.min_fee_amount"))
+        raw_max_fee = self._coerce_int(existing_values.get("fees.max_fee_amount"))
+
+        platform_fee_percent = _DEFAULT_PLATFORM_FEE_PERCENT if raw_percent is None else raw_percent
+        platform_fee_percent = min(100.0, max(0.0, platform_fee_percent))
+
+        min_fee_amount = _DEFAULT_MIN_FEE_AMOUNT if raw_min_fee is None else raw_min_fee
+        max_fee_amount = _DEFAULT_MAX_FEE_AMOUNT if raw_max_fee is None else raw_max_fee
+
+        if min_fee_amount < 0:
+            min_fee_amount = 0
+        if max_fee_amount < 0:
+            max_fee_amount = 0
+        if min_fee_amount > max_fee_amount:
+            min_fee_amount = _DEFAULT_MIN_FEE_AMOUNT
+            max_fee_amount = _DEFAULT_MAX_FEE_AMOUNT
+
+        raw_fee = int(amount * platform_fee_percent / 100)
+        fee_amount = max(min_fee_amount, min(raw_fee, max_fee_amount))
+
+        if normalized_who_pays == "buyer":
+            buyer_fee, seller_fee = fee_amount, 0
+        elif normalized_who_pays == "seller":
+            buyer_fee, seller_fee = 0, fee_amount
+        else:
+            buyer_fee = fee_amount // 2
+            seller_fee = fee_amount - buyer_fee
+
+        used_override = any(
+            key in existing_values
+            for key in (
+                "fees.platform_fee_percent",
+                "fees.min_fee_amount",
+                "fees.max_fee_amount",
+            )
+        )
+
+        return {
+            "fee_amount": fee_amount,
+            "buyer_fee": buyer_fee,
+            "seller_fee": seller_fee,
+            "platform_fee_percent": float(platform_fee_percent),
+            "min_fee_amount": min_fee_amount,
+            "max_fee_amount": max_fee_amount,
+            "used_override": used_override,
+        }
 
     async def _upsert_queue_from_dispute_payload(self, payload: dict[str, Any]) -> None:
         try:

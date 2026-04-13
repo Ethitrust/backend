@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Optional
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,9 +33,7 @@ class EscrowRepository:
         return result.scalar_one_or_none()
 
     async def get_by_ref(self, ref: str) -> Escrow | None:
-        result = await self.db.execute(
-            select(Escrow).where(Escrow.transaction_ref == ref)
-        )
+        result = await self.db.execute(select(Escrow).where(Escrow.transaction_ref == ref))
         return result.scalar_one_or_none()
 
     async def list_by_user(
@@ -45,7 +42,7 @@ class EscrowRepository:
         user_email: str | None,
         offset: int,
         limit: int,
-        status_filter: Optional[str],
+        status_filter: str | None,
     ) -> tuple[list[Escrow], int]:
         participant_filter = or_(
             Escrow.initiator_id == user_id,
@@ -64,9 +61,7 @@ class EscrowRepository:
         )
 
         base = select(Escrow).where(
-            or_(participant_filter, invitee_filter)
-            if user_email
-            else participant_filter
+            or_(participant_filter, invitee_filter) if user_email else participant_filter
         )
         if status_filter:
             base = base.where(Escrow.status == status_filter)
@@ -106,6 +101,43 @@ class EscrowRepository:
             )
         )
         return list(result.scalars().all())
+
+    async def associate_pending_invitations_by_email(
+        self,
+        user_id: uuid.UUID,
+        user_email: str,
+        now: datetime,
+    ) -> int:
+        normalized_email = user_email.strip().lower()
+        if not normalized_email:
+            return 0
+
+        result = await self.db.execute(
+            select(Escrow).where(
+                Escrow.receiver_id.is_(None),
+                func.lower(Escrow.receiver_email) == normalized_email,
+                Escrow.status.in_(
+                    (
+                        "invited",
+                        "counter_pending_initiator",
+                        "counter_pending_counterparty",
+                    )
+                ),
+                or_(Escrow.invite_expires_at.is_(None), Escrow.invite_expires_at > now),
+                or_(Escrow.initiator_id.is_(None), Escrow.initiator_id != user_id),
+            )
+        )
+        escrows = list(result.scalars().all())
+
+        for escrow in escrows:
+            escrow.receiver_id = user_id
+            escrow.invite_token_used_at = now
+            escrow.invite_token_hash = None
+
+        if escrows:
+            await self.db.commit()
+
+        return len(escrows)
 
     async def list_pending_unfunded_for_participant(
         self,
@@ -169,16 +201,12 @@ class EscrowRepository:
 
     async def get_milestones(self, escrow_id: uuid.UUID) -> list[Milestone]:
         result = await self.db.execute(
-            select(Milestone)
-            .where(Milestone.escrow_id == escrow_id)
-            .order_by(Milestone.sort_order)
+            select(Milestone).where(Milestone.escrow_id == escrow_id).order_by(Milestone.sort_order)
         )
         return list(result.scalars().all())
 
     async def get_milestone(self, milestone_id: uuid.UUID) -> Milestone | None:
-        result = await self.db.execute(
-            select(Milestone).where(Milestone.id == milestone_id)
-        )
+        result = await self.db.execute(select(Milestone).where(Milestone.id == milestone_id))
         return result.scalar_one_or_none()
 
     async def update_milestone(self, milestone: Milestone, **kwargs) -> Milestone:
@@ -214,9 +242,7 @@ class EscrowRepository:
 
     async def get_contributors(self, cycle_id: uuid.UUID) -> list[RecurringContributor]:
         result = await self.db.execute(
-            select(RecurringContributor).where(
-                RecurringContributor.cycle_id == cycle_id
-            )
+            select(RecurringContributor).where(RecurringContributor.cycle_id == cycle_id)
         )
         return list(result.scalars().all())
 

@@ -30,6 +30,7 @@ import proto.fee_pb2 as fee_pb2
 import proto.fee_pb2_grpc as fee_pb2_grpc
 
 from app.db import AsyncSessionLocal
+from app.models import FeeRecordRequest
 from app.repository import FeeRepository
 from app.service import FeeService
 
@@ -61,6 +62,85 @@ def _to_proto_entry(entry) -> fee_pb2.FeeLedgerResponse:
 
 
 class FeeGrpcServicer(fee_pb2_grpc.FeeServiceServicer):
+    async def CalculateFee(  # noqa: N802
+        self,
+        request: fee_pb2.CalculateFeeRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> fee_pb2.CalculateFeeResponse:
+        if request.amount <= 0:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "amount must be greater than 0")
+
+        async with AsyncSessionLocal() as session:
+            svc = FeeService(FeeRepository(session))
+            try:
+                calculation = await svc.calculate_fee(request.amount, request.who_pays)
+            except ValueError as exc:
+                await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
+            except HTTPException as exc:
+                await context.abort(_http_to_grpc_code(exc.status_code), str(exc.detail))
+            except Exception:
+                logger.exception(
+                    "Unexpected CalculateFee failure amount=%s who_pays=%s",
+                    request.amount,
+                    request.who_pays,
+                )
+                await context.abort(
+                    grpc.StatusCode.INTERNAL,
+                    "Unable to calculate fee",
+                )
+
+        return fee_pb2.CalculateFeeResponse(
+            fee_amount=calculation.fee_amount,
+            buyer_fee=calculation.buyer_fee,
+            seller_fee=calculation.seller_fee,
+        )
+
+    async def RecordFee(  # noqa: N802
+        self,
+        request: fee_pb2.RecordFeeRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> fee_pb2.FeeLedgerResponse:
+        try:
+            escrow_id = uuid.UUID(request.escrow_id)
+            org_id = uuid.UUID(request.org_id) if request.org_id else None
+        except (TypeError, ValueError):
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Invalid UUID in request")
+
+        if request.fee_amount <= 0:
+            await context.abort(
+                grpc.StatusCode.INVALID_ARGUMENT, "fee_amount must be greater than 0"
+            )
+
+        record_request = FeeRecordRequest(
+            escrow_id=escrow_id,
+            org_id=org_id,
+            fee_amount=request.fee_amount,
+            currency=request.currency,
+            paid_by=request.paid_by,
+            fee_type=request.fee_type or "escrow_fee",
+        )
+
+        async with AsyncSessionLocal() as session:
+            svc = FeeService(FeeRepository(session))
+            try:
+                entry = await svc.record_fee(record_request)
+                await session.commit()
+            except HTTPException as exc:
+                await session.rollback()
+                await context.abort(_http_to_grpc_code(exc.status_code), str(exc.detail))
+            except Exception:
+                await session.rollback()
+                logger.exception(
+                    "Unexpected RecordFee failure escrow_id=%s",
+                    escrow_id,
+                )
+                await context.abort(
+                    grpc.StatusCode.INTERNAL,
+                    "Unable to record fee",
+                )
+
+        return _to_proto_entry(entry)
+
     async def RefundFeeForEscrow(  # noqa: N802
         self,
         request: fee_pb2.RefundFeeForEscrowRequest,
@@ -78,14 +158,10 @@ class FeeGrpcServicer(fee_pb2_grpc.FeeServiceServicer):
                 await session.commit()
             except HTTPException as exc:
                 await session.rollback()
-                await context.abort(
-                    _http_to_grpc_code(exc.status_code), str(exc.detail)
-                )
+                await context.abort(_http_to_grpc_code(exc.status_code), str(exc.detail))
             except Exception:
                 await session.rollback()
-                logger.exception(
-                    "Unexpected RefundFeeForEscrow failure escrow_id=%s", escrow_id
-                )
+                logger.exception("Unexpected RefundFeeForEscrow failure escrow_id=%s", escrow_id)
                 await context.abort(
                     grpc.StatusCode.INTERNAL,
                     "Unable to refund fee for escrow",

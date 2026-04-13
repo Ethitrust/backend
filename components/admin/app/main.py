@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import Any
@@ -10,6 +11,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from app.api import router
+from app.grpc_server import serve as serve_grpc
 from app.logging_config import (
     configure_logging,
     get_request_metrics_snapshot,
@@ -22,8 +24,14 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):  # noqa: ANN001
+    grpc_task = asyncio.create_task(serve_grpc())
     logger.info("Admin service starting up")
     yield
+    grpc_task.cancel()
+    try:
+        await grpc_task
+    except asyncio.CancelledError:
+        pass
     logger.info("Admin service shut down")
 
 

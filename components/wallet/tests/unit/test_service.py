@@ -253,6 +253,48 @@ class TestReleaseFunds:
         assert exc_info.value.status_code == 400
 
     @pytest.mark.asyncio
+    async def test_release_funds_partial_capture_retains_remainder(self):
+        escrow_id = uuid.uuid4()
+        sender = _make_wallet(balance=0, locked_balance=600, currency="ETB")
+        recipient = _make_wallet(balance=100, currency="ETB")
+        lock = WalletLock(
+            wallet_id=sender.id,
+            amount=600,
+            currency="ETB",
+            reason="ESCROW",
+            source_type="ESCROW",
+            source_id=escrow_id,
+            reference="ref-release-partial",
+            status="locked",
+        )
+
+        repo = MagicMock()
+        repo.get_by_id = AsyncMock(side_effect=[sender, recipient])
+        repo.get_transaction_by_reference = AsyncMock(return_value=None)
+        repo.get_active_lock = AsyncMock(return_value=lock)
+        repo.update_balance = AsyncMock(return_value=sender)
+        repo.mark_lock_status = AsyncMock(return_value=lock)
+        repo.save_transaction = AsyncMock(side_effect=lambda tx: tx)
+
+        svc = WalletService(repo)
+        tx = await svc.release_funds(
+            sender.id,
+            recipient.id,
+            500,
+            "ref-release-partial",
+            escrow_id=escrow_id,
+            reason="ESCROW",
+            source_type="ESCROW",
+            source_id=escrow_id,
+        )
+
+        first_call = repo.update_balance.call_args_list[0]
+        second_call = repo.update_balance.call_args_list[1]
+        assert first_call.kwargs["locked_delta"] == -600
+        assert second_call.kwargs["balance_delta"] == 500
+        assert "retained_amount=100" in tx.description
+
+    @pytest.mark.asyncio
     async def test_release_funds_retry_returns_existing_capture_transaction(self):
         escrow_id = uuid.uuid4()
         sender = _make_wallet(balance=0, locked_balance=500)

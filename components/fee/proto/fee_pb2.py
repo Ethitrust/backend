@@ -24,19 +24,25 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\tfee.proto\x12\x03\x66\x65\x65\".\n\x19RefundFeeForEscrowRequest\x12\x11\n\tescrow_id\x18\x01 \x01(\t\"\x9b\x01\n\x11\x46\x65\x65LedgerResponse\x12\n\n\x02id\x18\x01 \x01(\t\x12\x11\n\tescrow_id\x18\x02 \x01(\t\x12\x10\n\x08\x66\x65\x65_type\x18\x03 \x01(\t\x12\x0e\n\x06\x61mount\x18\x04 \x01(\x03\x12\x10\n\x08\x63urrency\x18\x05 \x01(\t\x12\x0f\n\x07paid_by\x18\x06 \x01(\t\x12\x0e\n\x06status\x18\x07 \x01(\t\x12\x12\n\ncreated_at\x18\x08 \x01(\t\"C\n\x1aRefundFeeForEscrowResponse\x12%\n\x05items\x18\x01 \x03(\x0b\x32\x16.fee.FeeLedgerResponse2c\n\nFeeService\x12U\n\x12RefundFeeForEscrow\x12\x1e.fee.RefundFeeForEscrowRequest\x1a\x1f.fee.RefundFeeForEscrowResponseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\tfee.proto\x12\x03\x66\x65\x65\"7\n\x13\x43\x61lculateFeeRequest\x12\x0e\n\x06\x61mount\x18\x01 \x01(\x03\x12\x10\n\x08who_pays\x18\x02 \x01(\t\"Q\n\x14\x43\x61lculateFeeResponse\x12\x12\n\nfee_amount\x18\x01 \x01(\x03\x12\x11\n\tbuyer_fee\x18\x02 \x01(\x03\x12\x12\n\nseller_fee\x18\x03 \x01(\x03\"~\n\x10RecordFeeRequest\x12\x11\n\tescrow_id\x18\x01 \x01(\t\x12\x12\n\nfee_amount\x18\x02 \x01(\x03\x12\x10\n\x08\x63urrency\x18\x03 \x01(\t\x12\x0f\n\x07paid_by\x18\x04 \x01(\t\x12\x10\n\x08\x66\x65\x65_type\x18\x05 \x01(\t\x12\x0e\n\x06org_id\x18\x06 \x01(\t\".\n\x19RefundFeeForEscrowRequest\x12\x11\n\tescrow_id\x18\x01 \x01(\t\"\x9b\x01\n\x11\x46\x65\x65LedgerResponse\x12\n\n\x02id\x18\x01 \x01(\t\x12\x11\n\tescrow_id\x18\x02 \x01(\t\x12\x10\n\x08\x66\x65\x65_type\x18\x03 \x01(\t\x12\x0e\n\x06\x61mount\x18\x04 \x01(\x03\x12\x10\n\x08\x63urrency\x18\x05 \x01(\t\x12\x0f\n\x07paid_by\x18\x06 \x01(\t\x12\x0e\n\x06status\x18\x07 \x01(\t\x12\x12\n\ncreated_at\x18\x08 \x01(\t\"C\n\x1aRefundFeeForEscrowResponse\x12%\n\x05items\x18\x01 \x03(\x0b\x32\x16.fee.FeeLedgerResponse2\xe4\x01\n\nFeeService\x12\x43\n\x0c\x43\x61lculateFee\x12\x18.fee.CalculateFeeRequest\x1a\x19.fee.CalculateFeeResponse\x12:\n\tRecordFee\x12\x15.fee.RecordFeeRequest\x1a\x16.fee.FeeLedgerResponse\x12U\n\x12RefundFeeForEscrow\x12\x1e.fee.RefundFeeForEscrowRequest\x1a\x1f.fee.RefundFeeForEscrowResponseb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'fee_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_REFUNDFEEFORESCROWREQUEST']._serialized_start=18
-  _globals['_REFUNDFEEFORESCROWREQUEST']._serialized_end=64
-  _globals['_FEELEDGERRESPONSE']._serialized_start=67
-  _globals['_FEELEDGERRESPONSE']._serialized_end=222
-  _globals['_REFUNDFEEFORESCROWRESPONSE']._serialized_start=224
-  _globals['_REFUNDFEEFORESCROWRESPONSE']._serialized_end=291
-  _globals['_FEESERVICE']._serialized_start=293
-  _globals['_FEESERVICE']._serialized_end=392
+  _globals['_CALCULATEFEEREQUEST']._serialized_start=18
+  _globals['_CALCULATEFEEREQUEST']._serialized_end=73
+  _globals['_CALCULATEFEERESPONSE']._serialized_start=75
+  _globals['_CALCULATEFEERESPONSE']._serialized_end=156
+  _globals['_RECORDFEEREQUEST']._serialized_start=158
+  _globals['_RECORDFEEREQUEST']._serialized_end=284
+  _globals['_REFUNDFEEFORESCROWREQUEST']._serialized_start=286
+  _globals['_REFUNDFEEFORESCROWREQUEST']._serialized_end=332
+  _globals['_FEELEDGERRESPONSE']._serialized_start=335
+  _globals['_FEELEDGERRESPONSE']._serialized_end=490
+  _globals['_REFUNDFEEFORESCROWRESPONSE']._serialized_start=492
+  _globals['_REFUNDFEEFORESCROWRESPONSE']._serialized_end=559
+  _globals['_FEESERVICE']._serialized_start=562
+  _globals['_FEESERVICE']._serialized_end=790
 # @@protoc_insertion_point(module_scope)

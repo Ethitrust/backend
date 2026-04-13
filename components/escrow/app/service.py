@@ -14,6 +14,7 @@ State machine:
 from __future__ import annotations
 
 import hashlib
+import logging
 import math
 import secrets
 import uuid
@@ -40,10 +41,9 @@ from app.models import (
 from app.repository import EscrowRepository
 from app.settings import (
     INVITATION_EXPIRY_HOURS,
-    MAX_FEE_AMOUNT,
-    MIN_FEE_AMOUNT,
-    PLATFORM_FEE_PERCENT,
 )
+
+logger = logging.getLogger(__name__)
 
 # ─── State machine ────────────────────────────────────────────────────────────
 
@@ -119,12 +119,6 @@ INVITATION_WINDOW_STATUSES = {
 }
 
 
-def _calculate_fee(amount: int) -> int:
-    """Fee is percentage-based and capped using runtime settings."""
-    fee = math.floor(amount * (PLATFORM_FEE_PERCENT / 100))
-    return max(MIN_FEE_AMOUNT, min(fee, MAX_FEE_AMOUNT))
-
-
 def _generate_invite_token() -> str:
     return secrets.token_urlsafe(32)
 
@@ -140,6 +134,52 @@ def _temporary_transaction_ref() -> str:
 class EscrowService:
     def __init__(self, repo: EscrowRepository) -> None:
         self.repo = repo
+
+    @staticmethod
+    def _normalize_who_pays_fees(who_pays_fees: str) -> str:
+        normalized = who_pays_fees.lower().strip()
+        if normalized == "both":
+            return "split"
+        return normalized
+
+    async def _calculate_fee_breakdown(
+        self,
+        amount: int,
+        who_pays_fees: str,
+    ) -> tuple[int, int, int]:
+        normalized = self._normalize_who_pays_fees(who_pays_fees)
+        fee = await grpc_clients.calculate_fee(amount, normalized)
+        return (
+            int(fee["fee_amount"]),
+            int(fee["buyer_fee"]),
+            int(fee["seller_fee"]),
+        )
+
+    def _existing_fee_breakdown(self, escrow: Escrow) -> tuple[int, int, int]:
+        fee_amount = int(escrow.fee_amount)
+        who_pays_fees = self._normalize_who_pays_fees(escrow.who_pays_fees)
+        if who_pays_fees == "buyer":
+            return fee_amount, fee_amount, 0
+        if who_pays_fees == "seller":
+            return fee_amount, 0, fee_amount
+
+        buyer_fee = fee_amount // 2
+        seller_fee = fee_amount - buyer_fee
+        return fee_amount, buyer_fee, seller_fee
+
+    def _buyer_lock_amount_for_escrow(self, escrow: Escrow) -> int:
+        _, buyer_fee, _ = self._existing_fee_breakdown(escrow)
+        return int(escrow.amount) + buyer_fee
+
+    def _seller_release_amount_for_escrow(self, escrow: Escrow) -> int:
+        _, _, seller_fee = self._existing_fee_breakdown(escrow)
+        release_amount = int(escrow.amount) - seller_fee
+        if release_amount <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid settlement amount after fee deduction",
+            )
+        return release_amount
 
     @staticmethod
     def _resolve_initiator_wallet_owner_id(escrow: Escrow) -> str | None:
@@ -454,9 +494,10 @@ class EscrowService:
             return escrow, None
 
         try:
+            lock_amount = self._buyer_lock_amount_for_escrow(escrow)
             await grpc_clients.lock_funds(
                 wallet_id=buyer_wallet_id,
-                amount=escrow.amount,
+                amount=lock_amount,
                 reference=escrow.transaction_ref,
                 escrow_id=str(escrow.id),
             )
@@ -508,9 +549,10 @@ class EscrowService:
                 continue
 
             try:
+                lock_amount = self._buyer_lock_amount_for_escrow(escrow)
                 await grpc_clients.lock_funds(
                     wallet_id=buyer_wallet_id,
-                    amount=escrow.amount,
+                    amount=lock_amount,
                     reference=escrow.transaction_ref,
                     escrow_id=str(escrow.id),
                 )
@@ -541,6 +583,19 @@ class EscrowService:
             activated_count += 1
 
         return activated_count
+
+    async def associate_pending_invitations_for_user_email(
+        self,
+        user_id: uuid.UUID,
+        user_email: str,
+    ) -> int:
+        """Bind invitation-only escrows (receiver_email) to a newly registered user."""
+        now = datetime.now(timezone.utc)
+        return await self.repo.associate_pending_invitations_by_email(
+            user_id=user_id,
+            user_email=user_email,
+            now=now,
+        )
 
     # ── Cancel ────────────────────────────────────────────────────────────────
 
@@ -585,9 +640,10 @@ class EscrowService:
         if was_funded and escrow.transaction_ref and buyer_id:
             wallet_id = await grpc_clients.get_user_wallet(str(buyer_id), escrow.currency)
             if wallet_id:
+                lock_amount = self._buyer_lock_amount_for_escrow(escrow)
                 await grpc_clients.unlock_funds(
                     wallet_id=wallet_id,
-                    amount=escrow.amount,
+                    amount=lock_amount,
                     reference=escrow.transaction_ref,
                     escrow_id=str(escrow.id),
                 )
@@ -617,7 +673,10 @@ class EscrowService:
         initiator_actor_type: str,
         initiator_org_id: uuid.UUID | None,
     ) -> tuple[Escrow, str | None]:
-        fee = _calculate_fee(data.amount)
+        fee_amount, _, _ = await self._calculate_fee_breakdown(
+            data.amount,
+            data.who_pays_fees,
+        )
         now = datetime.now(timezone.utc)
         invite_token = _generate_invite_token() if data.receiver_id is None else None
         invite_token_hash = _hash_invite_token(invite_token) if invite_token is not None else None
@@ -636,7 +695,7 @@ class EscrowService:
             description=data.description,
             currency=data.currency,
             amount=data.amount,
-            fee_amount=fee,
+            fee_amount=fee_amount,
             acceptance_criteria=data.acceptance_criteria,
             inspection_period=data.inspection_period,
             delivery_date=data.delivery_date,
@@ -707,10 +766,11 @@ class EscrowService:
             )
 
         try:
+            release_amount = self._seller_release_amount_for_escrow(escrow)
             await grpc_clients.release_funds(
                 from_wallet_id=buyer_wallet,
                 to_wallet_id=seller_wallet,
-                amount=escrow.amount,
+                amount=release_amount,
                 reference=escrow.transaction_ref,
                 escrow_id=str(escrow.id),
             )
@@ -719,6 +779,26 @@ class EscrowService:
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Unable to release escrow funds",
             ) from exc
+
+        fee_amount, _, _ = self._existing_fee_breakdown(escrow)
+        if fee_amount > 0:
+            normalized_who_pays_fees = self._normalize_who_pays_fees(escrow.who_pays_fees)
+            paid_by = "both" if normalized_who_pays_fees == "split" else normalized_who_pays_fees
+            try:
+                await grpc_clients.record_fee(
+                    escrow_id=str(escrow.id),
+                    fee_amount=fee_amount,
+                    currency=escrow.currency,
+                    paid_by=paid_by,
+                    fee_type="escrow_fee",
+                    org_id=str(escrow.org_id) if escrow.org_id else None,
+                )
+            except RuntimeError:
+                logger.exception(
+                    "Failed to record escrow fee for escrow_id=%s fee_amount=%s",
+                    escrow.id,
+                    fee_amount,
+                )
 
         escrow = await self.transition_status(escrow, "completed", "system")
         escrow.completed_at = datetime.now(timezone.utc)
@@ -748,7 +828,10 @@ class EscrowService:
         initiator_org_id: uuid.UUID | None,
     ) -> tuple[Escrow, str | None]:
         total_amount = sum(m.amount for m in data.milestones)
-        fee = _calculate_fee(total_amount)
+        fee_amount, _, _ = await self._calculate_fee_breakdown(
+            total_amount,
+            data.who_pays_fees,
+        )
         now = datetime.now(timezone.utc)
         invite_token = _generate_invite_token() if data.receiver_id is None else None
         invite_token_hash = _hash_invite_token(invite_token) if invite_token is not None else None
@@ -767,7 +850,7 @@ class EscrowService:
             description=data.description,
             currency=data.currency,
             amount=total_amount,
-            fee_amount=fee,
+            fee_amount=fee_amount,
             acceptance_criteria=data.acceptance_criteria,
             inspection_period=data.inspection_period,
             delivery_date=data.delivery_date,
@@ -938,7 +1021,10 @@ class EscrowService:
         initiator_actor_type: str,
         initiator_org_id: uuid.UUID | None,
     ) -> tuple[Escrow, str | None]:
-        fee = _calculate_fee(data.cycle.expected_amount)
+        fee_amount, _, _ = await self._calculate_fee_breakdown(
+            data.cycle.expected_amount,
+            data.who_pays_fees,
+        )
         now = datetime.now(timezone.utc)
         invite_token = _generate_invite_token() if data.receiver_id is None else None
         invite_token_hash = _hash_invite_token(invite_token) if invite_token is not None else None
@@ -957,7 +1043,7 @@ class EscrowService:
             description=data.description,
             currency=data.currency,
             amount=data.cycle.expected_amount,
-            fee_amount=fee,
+            fee_amount=fee_amount,
             acceptance_criteria=data.acceptance_criteria,
             inspection_period=data.inspection_period,
             delivery_date=data.delivery_date,
@@ -1378,7 +1464,11 @@ class EscrowService:
             escrow.description = body.description
         if body.amount is not None:
             escrow.amount = body.amount
-            escrow.fee_amount = _calculate_fee(body.amount)
+            fee_amount, _, _ = await self._calculate_fee_breakdown(
+                body.amount,
+                body.who_pays_fees if body.who_pays_fees is not None else escrow.who_pays_fees,
+            )
+            escrow.fee_amount = fee_amount
         if body.acceptance_criteria is not None:
             escrow.acceptance_criteria = body.acceptance_criteria
         if body.inspection_period is not None:

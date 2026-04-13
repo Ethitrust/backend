@@ -595,13 +595,13 @@ class WalletService:
             raise HTTPException(404, "LOCK_NOT_FOUND")
         if lock.source_type != source_type_value or lock.source_id != source_id_value:
             raise HTTPException(400, "LOCK_ASSOCIATION_MISMATCH")
-        if amount != lock.amount:
-            raise HTTPException(400, "LOCK_AMOUNT_MISMATCH")
+        if amount > lock.amount:
+            raise HTTPException(400, "LOCK_AMOUNT_EXCEEDED")
 
         sender = await self.repo.get_by_id(from_wallet_id)
         if not sender:
             raise HTTPException(404, "Sender wallet not found")
-        if amount > sender.locked_balance:
+        if lock.amount > sender.locked_balance:
             raise HTTPException(400, "INSUFFICIENT_LOCKED_BALANCE")
 
         recipient = await self.repo.get_by_id(to_wallet_id)
@@ -609,10 +609,12 @@ class WalletService:
             raise HTTPException(404, "Recipient wallet not found")
 
         # Deduct from sender locked balance
-        await self.repo.update_balance(from_wallet_id, balance_delta=0, locked_delta=-amount)
+        await self.repo.update_balance(from_wallet_id, balance_delta=0, locked_delta=-lock.amount)
         # Credit recipient available balance
         await self.repo.update_balance(to_wallet_id, balance_delta=amount, locked_delta=0)
         await self.repo.mark_lock_status(lock, "captured")
+
+        retained_amount = lock.amount - amount
 
         tx = Transaction(
             wallet_id=from_wallet_id,
@@ -624,7 +626,7 @@ class WalletService:
             reference=tx_reference,
             description=(
                 f"Locked funds captured for {source_type_value}:{source_id_value} "
-                f"({reason_value}) to wallet {to_wallet_id}"
+                f"({reason_value}) to wallet {to_wallet_id}; retained_amount={retained_amount}"
             ),
             provider="internal",
         )

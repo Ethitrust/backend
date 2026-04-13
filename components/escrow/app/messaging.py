@@ -6,6 +6,7 @@ Publishes:  escrow.created, escrow.cancelled, escrow.completed,
             escrow.contributor_joined
 Consumes:   wallet.deposit.success → retries pending escrow wallet lock
             payment.completed      → compatibility fallback for older emitters
+            user.registered        → binds pending email invitations to new user_id
 """
 
 from __future__ import annotations
@@ -64,6 +65,39 @@ async def handle_event(key: str, data: dict) -> None:
 
     Funding events trigger pending-escrow lock retries for the funded buyer.
     """
+    if key == "user.registered":
+        user_id_raw = data.get("user_id")
+        user_email = data.get("email")
+        if not user_id_raw or not isinstance(user_email, str) or not user_email.strip():
+            logger.info("%s ignored; user_id/email missing", key)
+            return
+
+        try:
+            user_id = uuid.UUID(str(user_id_raw))
+        except ValueError:
+            logger.warning("%s ignored; invalid user_id=%s", key, user_id_raw)
+            return
+
+        from app.db import async_session_factory  # noqa: PLC0415
+        from app.repository import EscrowRepository  # noqa: PLC0415
+        from app.service import EscrowService  # noqa: PLC0415
+
+        async with async_session_factory() as session:
+            repo = EscrowRepository(session)
+            service = EscrowService(repo)
+            associated = await service.associate_pending_invitations_for_user_email(
+                user_id=user_id,
+                user_email=user_email,
+            )
+            logger.info(
+                "Processed %s for user=%s email=%s associated_pending_invitations=%s",
+                key,
+                user_id,
+                user_email,
+                associated,
+            )
+        return
+
     if key not in {"wallet.deposit.success", "payment.completed"}:
         return
 
@@ -118,6 +152,7 @@ async def start_consumer() -> None:
         queue = await channel.declare_queue(QUEUE_NAME, durable=True)
         await queue.bind(exchange, routing_key="wallet.deposit.success")
         await queue.bind(exchange, routing_key="payment.#")
+        await queue.bind(exchange, routing_key="user.registered")
 
         logger.info("Escrow consumer started, listening on queue '%s'", QUEUE_NAME)
         async with queue.iterator() as queue_iter:
@@ -128,6 +163,4 @@ async def start_consumer() -> None:
                         routing_key = message.routing_key or ""
                         await handle_event(routing_key, body)
                     except Exception:
-                        logger.exception(
-                            "Error handling message with key=%s", message.routing_key
-                        )
+                        logger.exception("Error handling message with key=%s", message.routing_key)
