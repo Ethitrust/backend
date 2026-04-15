@@ -9,7 +9,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from app.api import router
 from app.grpc_server import serve as grpc_serve
 from app.logging_config import configure_logging, install_request_logging
 
@@ -32,7 +31,6 @@ async def lifespan(application: FastAPI):  # noqa: ANN001
 
 app = FastAPI(title="Ethitrust Audit Service", version="0.1.0", lifespan=lifespan)
 install_request_logging(app)
-app.include_router(router)
 
 
 @app.exception_handler(HTTPException)
