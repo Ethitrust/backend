@@ -15,6 +15,7 @@ import httpx
 import redis.asyncio as redis
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from starlette.background import BackgroundTask
 
 logging.basicConfig(level=logging.INFO)
@@ -115,15 +116,16 @@ def _resolve_target(path: str) -> tuple[str, str] | None:
     return None
 
 
-def _authorization_header(request: Request) -> str | None:
-    return request.headers.get("Authorization")
+_BEARER_SCHEME = HTTPBearer(auto_error=False)
 
 
-def _extract_bearer_token(authorization: str | None) -> str | None:
-    if not authorization or not authorization.startswith("Bearer "):
+async def _extract_bearer_token(request: Request) -> str | None:
+    """Extract bearer token using HTTPBearer; returns None if missing or invalid."""
+    credentials = await _BEARER_SCHEME(request)
+    if credentials is None:
         return None
-    token = authorization.removeprefix("Bearer ").strip()
-    return token or None
+    token = credentials.credentials.strip()
+    return token if token else None
 
 
 def _is_probable_org_api_key(token: str) -> bool:
@@ -190,14 +192,15 @@ def _is_kyc_exempt_path(path: str, method: str) -> bool:
     return False
 
 
-def _is_org_api_key_escrow_create(
+async def _is_org_api_key_escrow_create(
     path: str,
     method: str,
-    authorization: str | None,
+    request: Request,
 ) -> bool:
+    """Check if this is an org API key creating an escrow (allowed without KYC)."""
     if path != "/escrow" or method != "POST":
         return False
-    token = _extract_bearer_token(authorization)
+    token = await _extract_bearer_token(request)
     if token is None:
         return False
     return _is_probable_org_api_key(token)
@@ -229,6 +232,14 @@ def _get_header_case_insensitive(headers: dict[str, str], name: str) -> str | No
         if key.lower() == target:
             return value
     return None
+
+
+async def _sanitize_authorization_header(request: Request) -> str | None:
+    """Extract and validate bearer token, returning properly formatted header value."""
+    token = await _extract_bearer_token(request)
+    if token is None:
+        return None
+    return f"Bearer {token}"
 
 
 def _append_forwarded_for(existing_value: str | None, client_ip: str | None) -> str | None:
@@ -353,12 +364,11 @@ async def _enforce_kyc_if_required(request: Request) -> None:
     if _is_kyc_exempt_path(path, method):
         return
 
-    authorization = _authorization_header(request)
-    token = _extract_bearer_token(authorization)
+    token = await _extract_bearer_token(request)
     if token is None:
         return
 
-    if _is_org_api_key_escrow_create(path, method, authorization):
+    if await _is_org_api_key_escrow_create(path, method, request):
         return
 
     cached_kyc = await _get_cached_kyc_level(request, token)
@@ -377,7 +387,7 @@ async def _enforce_kyc_if_required(request: Request) -> None:
     try:
         profile_response = await client.get(
             f"{USER_SERVICE_URL.rstrip('/')}/users/me",
-            headers={"Authorization": authorization},
+            headers={"Authorization": f"Bearer {token}"},
             timeout=_resolve_timeout_for_path("/users/me"),
         )
     except httpx.TimeoutException as exc:
@@ -480,8 +490,14 @@ async def proxy(request: Request, path: str) -> Response:
     req_headers = {
         k: v
         for k, v in request.headers.items()
-        if k.lower() not in _HOP_BY_HOP and k.lower() != "host"
+        if k.lower() not in _HOP_BY_HOP and k.lower() != "host" and k.lower() != "authorization"
     }
+
+    # Sanitize and re-validate Authorization header before forwarding
+    auth_header = await _sanitize_authorization_header(request)
+    if auth_header is not None:
+        req_headers["Authorization"] = auth_header
+
     _apply_forwarding_headers(request, req_headers)
 
     client: httpx.AsyncClient = request.app.state.http_client

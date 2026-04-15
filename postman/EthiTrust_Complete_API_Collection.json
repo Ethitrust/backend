@@ -1,0 +1,2974 @@
+{
+    "info": {
+        "name": "EthiTrust Backend - Complete API Collection",
+        "description": "Comprehensive Postman collection for all EthiTrust microservices APIs",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+        "version": "1.0.0"
+    },
+    "variable": [
+        {
+            "key": "base_url",
+            "value": "http://localhost:8000",
+            "type": "string"
+        },
+        {
+            "key": "auth_token",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "org_secret_key",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "user_id",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "wallet_id",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "org_id",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "escrow_id",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "dispute_id",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "payout_id",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "notif_id",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "transaction_ref",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "milestone_id",
+            "value": "",
+            "type": "string"
+        }
+    ],
+    "event": [
+        {
+            "listen": "test",
+            "script": {
+                "type": "text/javascript",
+                "exec": [
+                    "const requestName = pm.info.requestName || '';",
+                    "const statusCode = pm.response.code;",
+                    "",
+                    "pm.test('Response status is successful (2xx)', function () {",
+                    "  pm.expect(statusCode).to.be.within(200, 299);",
+                    "});",
+                    "",
+                    "let data = null;",
+                    "try {",
+                    "  data = pm.response.json();",
+                    "} catch (error) {",
+                    "  data = null;",
+                    "}",
+                    "",
+                    "if (!data || typeof data !== 'object') {",
+                    "  return;",
+                    "}",
+                    "",
+                    "const setVar = (key, value) => {",
+                    "  if (value !== undefined && value !== null && String(value).length > 0) {",
+                    "    pm.collectionVariables.set(key, String(value));",
+                    "  }",
+                    "};",
+                    "",
+                    "const firstItem = (value) => Array.isArray(value) && value.length > 0 ? value[0] : null;",
+                    "const payload = data.data && typeof data.data === 'object' ? data.data : data;",
+                    "",
+                    "setVar('auth_token', payload.access_token || payload.token || payload.jwt);",
+                    "setVar('user_id', payload.user_id || payload.id || (payload.user && (payload.user.id || payload.user.user_id)));",
+                    "setVar('org_id', payload.org_id || payload.organization_id || payload.id || (payload.organization && payload.organization.id));",
+                    "setVar('org_secret_key', payload.org_secret_key || payload.secret_key || payload.api_key || (payload.organization && (payload.organization.secret_key || payload.organization.api_key)));",
+                    "setVar('wallet_id', payload.wallet_id || payload.id || (payload.wallet && payload.wallet.id));",
+                    "setVar('escrow_id', payload.escrow_id || payload.id || (payload.escrow && payload.escrow.id));",
+                    "setVar('dispute_id', payload.dispute_id || payload.id || (payload.dispute && payload.dispute.id));",
+                    "setVar('payout_id', payload.payout_id || payload.id || (payload.payout && payload.payout.id));",
+                    "setVar('notif_id', payload.notification_id || payload.notif_id || payload.id || (payload.notification && payload.notification.id));",
+                    "setVar('transaction_ref', payload.transaction_ref || payload.reference || payload.tx_ref || (payload.transaction && (payload.transaction.reference || payload.transaction.transaction_ref)));",
+                    "setVar('milestone_id', payload.milestone_id || payload.id || (payload.milestone && payload.milestone.id));",
+                    "",
+                    "if (requestName === 'List Wallets') {",
+                    "  const wallet = firstItem(payload.wallets || payload.items || payload.results || payload.data);",
+                    "  if (wallet && typeof wallet === 'object') {",
+                    "    setVar('wallet_id', wallet.wallet_id || wallet.id);",
+                    "  }",
+                    "}",
+                    "",
+                    "if (requestName === 'List Organizations') {",
+                    "  const organization = firstItem(payload.organizations || payload.items || payload.results || payload.data);",
+                    "  if (organization && typeof organization === 'object') {",
+                    "    setVar('org_id', organization.org_id || organization.id);",
+                    "    setVar('org_secret_key', organization.secret_key || organization.api_key);",
+                    "  }",
+                    "}",
+                    "",
+                    "if (requestName === 'List Notifications') {",
+                    "  const notification = firstItem(payload.notifications || payload.items || payload.results || payload.data);",
+                    "  if (notification && typeof notification === 'object') {",
+                    "    setVar('notif_id', notification.notif_id || notification.notification_id || notification.id);",
+                    "  }",
+                    "}",
+                    "",
+                    "if (requestName === 'List Milestones') {",
+                    "  const milestone = firstItem(payload.milestones || payload.items || payload.results || payload.data);",
+                    "  if (milestone && typeof milestone === 'object') {",
+                    "    setVar('milestone_id', milestone.milestone_id || milestone.id);",
+                    "  }",
+                    "}",
+                    "",
+                    "if (requestName === 'Get Current User' || requestName === 'Get My Profile') {",
+                    "  setVar('user_id', payload.user_id || payload.id || (payload.user && payload.user.id));",
+                    "}",
+                    "",
+                    "if (requestName === 'Create Organization') {",
+                    "  setVar('org_id', payload.org_id || payload.id || (payload.organization && payload.organization.id));",
+                    "  setVar('org_secret_key', payload.secret_key || payload.api_key || (payload.organization && (payload.organization.secret_key || payload.organization.api_key)));",
+                    "}",
+                    "",
+                    "if (requestName === 'Get Organization Wallet') {",
+                    "  setVar('wallet_id', payload.wallet_id || payload.id || (payload.wallet && payload.wallet.id));",
+                    "}",
+                    "",
+                    "if (requestName === 'Fund Wallet (Initiate Deposit)') {",
+                    "  setVar('transaction_ref', payload.transaction_ref || payload.reference || payload.tx_ref || (payload.transaction && (payload.transaction.reference || payload.transaction.transaction_ref)));",
+                    "}",
+                    "",
+                    "if (requestName === 'Initialize Escrow' || requestName === 'Initialize Organization Escrow' || requestName === 'Get Escrow') {",
+                    "  setVar('escrow_id', payload.escrow_id || payload.id || (payload.escrow && payload.escrow.id));",
+                    "}",
+                    "",
+                    "if (requestName === 'Raise Dispute' || requestName === 'Get Dispute') {",
+                    "  setVar('dispute_id', payload.dispute_id || payload.id || (payload.dispute && payload.dispute.id));",
+                    "}",
+                    "",
+                    "if (requestName === 'Request Payout' || requestName === 'Get Payout') {",
+                    "  setVar('payout_id', payload.payout_id || payload.id || (payload.payout && payload.payout.id));",
+                    "}",
+                    "",
+                    "if (requestName === 'Verify Payment') {",
+                    "  setVar('transaction_ref', payload.reference || payload.tx_ref || payload.transaction_ref);",
+                    "}",
+                    "",
+                    "console.log('Post-processing complete for request:', requestName);"
+                ]
+            }
+        }
+    ],
+    "item": [
+        {
+            "name": "Auth Service",
+            "description": "Authentication and session management endpoints",
+            "item": [
+                {
+                    "name": "Signup",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"SecurePassword123!\",\n  \"first_name\": \"John\",\n  \"last_name\": \"Doe\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/auth/signup",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "signup"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Login",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"SecurePassword123!\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/auth/login",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "login"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Logout",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/auth/logout",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "logout"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "List Sessions",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/auth/sessions",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "sessions"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Revoke Session",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/auth/sessions/{jti}/revoke",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "sessions",
+                                "{jti}",
+                                "revoke"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Verify Email",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"user@example.com\",\n  \"otp\": \"123456\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/auth/verify-email",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "verify-email"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Resend OTP",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"user@example.com\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/auth/resend-otp",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "resend-otp"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Forgot Password",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"user@example.com\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/auth/forgot-password",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "forgot-password"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Reset Password",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"token\": \"reset_token_here\",\n  \"new_password\": \"NewSecurePassword123!\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/auth/reset-password",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "reset-password"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Current User",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/auth/me",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "me"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "User Service",
+            "description": "User profile management endpoints",
+            "item": [
+                {
+                    "name": "Get My Profile",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/users/me",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "users",
+                                "me"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Update My Profile",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"first_name\": \"John\",\n  \"last_name\": \"Doe\",\n  \"phone\": \"+251900000000\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/users/me",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "users",
+                                "me"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Organization Service",
+            "description": "Organization management and wallet operations",
+            "item": [
+                {
+                    "name": "Create Organization",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"name\": \"My Business\",\n  \"description\": \"Business description\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/organization",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "organization"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "List Organizations",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/organization",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "organization"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Organization",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/organization/{{org_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "organization",
+                                "{{org_id}}"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Organization Wallet",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/organization/{{org_id}}/wallet",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "organization",
+                                "{{org_id}}",
+                                "wallet"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Wallet Balance",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/organization/{{org_id}}/wallet/balance",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "organization",
+                                "{{org_id}}",
+                                "wallet",
+                                "balance"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Withdraw from Wallet",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"amount\": 10000,\n  \"bank_code\": \"001\",\n  \"account_number\": \"1234567890\",\n  \"account_holder_name\": \"Business Name\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/organization/{{org_id}}/wallet/withdraw",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "organization",
+                                "{{org_id}}",
+                                "wallet",
+                                "withdraw"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Rotate Secret Key",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/organization/{{org_id}}/keys/rotate",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "organization",
+                                "{{org_id}}",
+                                "keys",
+                                "rotate"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Update Webhook",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"webhook_url\": \"https://example.com/webhooks\",\n  \"webhook_secret\": \"your_secret_here\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/organization/{{org_id}}/webhook",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "organization",
+                                "{{org_id}}",
+                                "webhook"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Invite Member",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"member@example.com\",\n  \"role\": \"admin\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/organization/{{org_id}}/members",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "organization",
+                                "{{org_id}}",
+                                "members"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Update Member Role",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"role\": \"member\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/organization/{{org_id}}/members/{{user_id}}/role",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "organization",
+                                "{{org_id}}",
+                                "members",
+                                "{{user_id}}",
+                                "role"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "List Organization Roles",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/organization/{{org_id}}/roles",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "organization",
+                                "{{org_id}}",
+                                "roles"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Update Role Permissions",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"permissions\": [\"read\", \"write\"]\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/organization/{{org_id}}/roles/admin/permissions",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "organization",
+                                "{{org_id}}",
+                                "roles",
+                                "admin",
+                                "permissions"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Remove Member",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/organization/{{org_id}}/members/{{user_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "organization",
+                                "{{org_id}}",
+                                "members",
+                                "{{user_id}}"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Check Member Exists",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/organization/{{org_id}}/members/{{user_id}}/exists",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "organization",
+                                "{{org_id}}",
+                                "members",
+                                "{{user_id}}",
+                                "exists"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Wallet Service",
+            "description": "Wallet management and transaction endpoints",
+            "item": [
+                {
+                    "name": "List Wallets",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/wallet",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "wallet"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Wallet",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/wallet/{{wallet_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "wallet",
+                                "{{wallet_id}}"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Wallet Balance",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/wallet/{{wallet_id}}/balance",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "wallet",
+                                "{{wallet_id}}",
+                                "balance"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Fund Wallet (Initiate Deposit)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"amount\": 5000,\n  \"provider\": \"chapa\",\n  \"return_url\": \"https://example.com/callback\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/wallet/{{wallet_id}}/fund",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "wallet",
+                                "{{wallet_id}}",
+                                "fund"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Reconcile Fund Transaction",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/wallet/{{wallet_id}}/fund/{{transaction_ref}}/reconcile?provider=chapa",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "wallet",
+                                "{{wallet_id}}",
+                                "fund",
+                                "{{transaction_ref}}",
+                                "reconcile"
+                            ],
+                            "query": [
+                                {
+                                    "key": "provider",
+                                    "value": "chapa"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Wallet Transactions",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/wallet/{{wallet_id}}/transactions?page=1&limit=20",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "wallet",
+                                "{{wallet_id}}",
+                                "transactions"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "20"
+                                }
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Admin Service",
+            "description": "Admin operations and platform management",
+            "item": [
+                {
+                    "name": "List Users",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/admin/users?page=1&limit=50",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "users"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "50"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Update User Role",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"role\": \"admin\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/admin/users/{{user_id}}/role",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "users",
+                                "{{user_id}}",
+                                "role"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Ban User",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"ban\": true,\n  \"reason\": \"Fraudulent activity\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/admin/users/{{user_id}}/ban",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "users",
+                                "{{user_id}}",
+                                "ban"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Override User Verification",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "X-Idempotency-Key",
+                                "value": "unique-key-123"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"verification_status\": \"verified\",\n  \"reason\": \"Manual override\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/admin/users/{{user_id}}/verification-override",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "users",
+                                "{{user_id}}",
+                                "verification-override"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Create User Risk Flag",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"flag_type\": \"suspicious_activity\",\n  \"reason\": \"Multiple failed transactions\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/admin/users/{{user_id}}/risk-flags",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "users",
+                                "{{user_id}}",
+                                "risk-flags"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Add Moderation Note",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"note\": \"User under investigation for AML compliance\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/admin/users/{{user_id}}/moderation-notes",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "users",
+                                "{{user_id}}",
+                                "moderation-notes"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get User Moderation Timeline",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/admin/users/{{user_id}}/timeline?limit=200",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "users",
+                                "{{user_id}}",
+                                "timeline"
+                            ],
+                            "query": [
+                                {
+                                    "key": "limit",
+                                    "value": "200"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Bulk Ban Users",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "X-Idempotency-Key",
+                                "value": "bulk-ban-key-123"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"user_ids\": [\"user-id-1\", \"user-id-2\"],\n  \"ban\": true,\n  \"reason\": \"Bulk suspension\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/admin/bulk/users/ban",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "bulk",
+                                "users",
+                                "ban"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "List Dispute Queue",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/admin/disputes/queue?page=1&limit=20&status=open",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "disputes",
+                                "queue"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "20"
+                                },
+                                {
+                                    "key": "status",
+                                    "value": "open"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Dispute Queue Item",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/admin/disputes/{{dispute_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "disputes",
+                                "{{dispute_id}}"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Update Dispute Queue Item",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"assignee_id\": \"admin-user-id\",\n  \"priority\": \"high\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/admin/disputes/{{dispute_id}}/queue",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "disputes",
+                                "{{dispute_id}}",
+                                "queue"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Create Evidence Request",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"recipient_user_id\": \"user-id-123\",\n  \"description\": \"Please submit proof of payment\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/admin/disputes/{{dispute_id}}/evidence-requests",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "disputes",
+                                "{{dispute_id}}",
+                                "evidence-requests"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Add Internal Dispute Note",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"note\": \"Internal note for team discussion\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/admin/disputes/{{dispute_id}}/internal-notes",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "disputes",
+                                "{{dispute_id}}",
+                                "internal-notes"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Move Dispute to Review",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"note\": \"Moving to review for examination\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/admin/disputes/{{dispute_id}}/review",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "disputes",
+                                "{{dispute_id}}",
+                                "review"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Decide Dispute Resolution",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"resolution\": \"buyer_wins\",\n  \"rationale\": \"Evidence clearly supports buyer claim\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/admin/disputes/{{dispute_id}}/resolution",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "disputes",
+                                "{{dispute_id}}",
+                                "resolution"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Dispute Dashboard Counters",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/admin/disputes/dashboard/counters",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "disputes",
+                                "dashboard",
+                                "counters"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "List Payout Queue",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/admin/payouts/queue?page=1&limit=20&status=pending",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "payouts",
+                                "queue"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "20"
+                                },
+                                {
+                                    "key": "status",
+                                    "value": "pending"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Update Payout Queue Item",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"assignee_id\": \"admin-user-id\",\n  \"priority\": \"high\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/admin/payouts/{{payout_id}}/queue",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "payouts",
+                                "{{payout_id}}",
+                                "queue"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Retry Payout Transfer",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"reason\": \"Network timeout, retrying\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/admin/payouts/{{payout_id}}/retry",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "payouts",
+                                "{{payout_id}}",
+                                "retry"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Financial Dashboard Counters",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/admin/finance/dashboard/counters",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "finance",
+                                "dashboard",
+                                "counters"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Financial Reconciliation Summary",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/admin/finance/reconciliation/summary",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "finance",
+                                "reconciliation",
+                                "summary"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Growth Analytics",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/admin/analytics/growth?window_days=30",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "analytics",
+                                "growth"
+                            ],
+                            "query": [
+                                {
+                                    "key": "window_days",
+                                    "value": "30"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Dispute Throughput Analytics",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/admin/analytics/disputes-throughput?window_days=30",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "analytics",
+                                "disputes-throughput"
+                            ],
+                            "query": [
+                                {
+                                    "key": "window_days",
+                                    "value": "30"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Payout Health Analytics",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/admin/analytics/payout-health?window_days=30",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "analytics",
+                                "payout-health"
+                            ],
+                            "query": [
+                                {
+                                    "key": "window_days",
+                                    "value": "30"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Volume Analytics",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/admin/analytics/volume?window_days=30",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "analytics",
+                                "volume"
+                            ],
+                            "query": [
+                                {
+                                    "key": "window_days",
+                                    "value": "30"
+                                }
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Dispute Service",
+            "description": "Dispute management and resolution endpoints",
+            "item": [
+                {
+                    "name": "Raise Dispute",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"reason\": \"goods_not_received\",\n  \"description\": \"Item was not delivered as promised\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/dispute/{{escrow_id}}/dispute",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "dispute",
+                                "{{escrow_id}}",
+                                "dispute"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Dispute",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/dispute/{{escrow_id}}/dispute",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "dispute",
+                                "{{escrow_id}}",
+                                "dispute"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Add Evidence",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"file_url\": \"https://storage.example.com/receipt.pdf\",\n  \"file_type\": \"pdf\",\n  \"description\": \"Proof of non-delivery\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/dispute/{{escrow_id}}/dispute/{{dispute_id}}/evidence",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "dispute",
+                                "{{escrow_id}}",
+                                "dispute",
+                                "{{dispute_id}}",
+                                "evidence"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Resolve Dispute",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"resolution\": \"buyer_wins\",\n  \"buyer_refund_amount\": 100000,\n  \"seller_fee_adjustment\": 0\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/dispute/{{escrow_id}}/dispute/{{dispute_id}}/resolve",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "dispute",
+                                "{{escrow_id}}",
+                                "dispute",
+                                "{{dispute_id}}",
+                                "resolve"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Execute Resolution",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "X-Internal-Token",
+                                "value": "internal-token-here"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"resolution\": \"buyer_wins\",\n  \"admin_id\": \"admin-user-id\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/dispute/{{dispute_id}}/execute-resolution",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "dispute",
+                                "{{dispute_id}}",
+                                "execute-resolution"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "List Disputes",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/dispute?page=1&limit=20&status=open",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "dispute"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "20"
+                                },
+                                {
+                                    "key": "status",
+                                    "value": "open"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "List My Disputes",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/dispute/me?page=1&limit=20&status=open",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "dispute",
+                                "me"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "20"
+                                },
+                                {
+                                    "key": "status",
+                                    "value": "open"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Move Dispute to Review",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"note\": \"Moving to review for examination\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/dispute/{{dispute_id}}/review",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "dispute",
+                                "{{dispute_id}}",
+                                "review"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Cancel Dispute",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/dispute/{{dispute_id}}/cancel",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "dispute",
+                                "{{dispute_id}}",
+                                "cancel"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Escrow Service",
+            "description": "Escrow transaction management",
+            "item": [
+                {
+                    "name": "Initialize Escrow",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"receiver_email\": \"receiver@example.com\",\n  \"amount\": 100000,\n  \"currency\": \"ETB\",\n  \"description\": \"Payment for services\",\n  \"escrow_type\": \"onetime\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/escrow",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "escrow"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Initialize Organization Escrow",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "X-Org-Secret-Key",
+                                "value": "{{org_secret_key}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"receiver_email\": \"customer@example.com\",\n  \"amount\": 250000,\n  \"currency\": \"ETB\",\n  \"description\": \"Product purchase\",\n  \"escrow_type\": \"onetime\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/escrow/organization",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "escrow",
+                                "organization"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Precheck Invitation",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/escrow/{{escrow_id}}/invitation/precheck?token=invitation_token_here",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "escrow",
+                                "{{escrow_id}}",
+                                "invitation",
+                                "precheck"
+                            ],
+                            "query": [
+                                {
+                                    "key": "token",
+                                    "value": "invitation_token_here"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Accept Invitation",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"token\": \"invitation_token\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/escrow/{{escrow_id}}/accept",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "escrow",
+                                "{{escrow_id}}",
+                                "accept"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Reject Invitation",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"reason\": \"Not interested\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/escrow/{{escrow_id}}/reject",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "escrow",
+                                "{{escrow_id}}",
+                                "reject"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Counter Invitation",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"amount\": 80000,\n  \"description\": \"Countered amount due to terms adjustment\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/escrow/{{escrow_id}}/counter",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "escrow",
+                                "{{escrow_id}}",
+                                "counter"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Resend Invitation",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"receiver_email\": \"receiver@example.com\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/escrow/{{escrow_id}}/resend",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "escrow",
+                                "{{escrow_id}}",
+                                "resend"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "List Escrows",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/escrow?page=1&limit=20&status=active",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "escrow"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "20"
+                                },
+                                {
+                                    "key": "status",
+                                    "value": "active"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Escrow",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/escrow/{{escrow_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "escrow",
+                                "{{escrow_id}}"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Cancel Escrow",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/escrow/{{escrow_id}}/cancel",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "escrow",
+                                "{{escrow_id}}",
+                                "cancel"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Complete Escrow",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/escrow/{{escrow_id}}/complete",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "escrow",
+                                "{{escrow_id}}",
+                                "complete"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "List Milestones",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/escrow/{{escrow_id}}/milestones",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "escrow",
+                                "{{escrow_id}}",
+                                "milestones"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Deliver Milestone",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/escrow/{{escrow_id}}/milestones/{{milestone_id}}/deliver",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "escrow",
+                                "{{escrow_id}}",
+                                "milestones",
+                                "{{milestone_id}}",
+                                "deliver"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Payout Service",
+            "description": "Payout management and withdrawals",
+            "item": [
+                {
+                    "name": "Request Payout",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"amount\": 50000,\n  \"bank_code\": \"001\",\n  \"account_number\": \"1234567890\",\n  \"account_holder_name\": \"John Doe\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/payout/request",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "payout",
+                                "request"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Process Bank Transfer",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/payout/bank-transfer/et/{{payout_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "payout",
+                                "bank-transfer",
+                                "et",
+                                "{{payout_id}}"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Payout",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/payout/{{payout_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "payout",
+                                "{{payout_id}}"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "List Payouts",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/payout?page=1&limit=20",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "payout"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "20"
+                                }
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "KYC Service",
+            "description": "Know Your Customer verification endpoints",
+            "item": [
+                {
+                    "name": "Lookup TIN",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"tin\": \"0512345678901\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/kyc/tin",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "kyc",
+                                "tin"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Fayda Send OTP",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"fan_or_fin\": \"0123456789\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/kyc/fayda/send-otp",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "kyc",
+                                "fayda",
+                                "send-otp"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Fayda Verify OTP",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"transaction_id\": \"transaction-id-here\",\n  \"otp\": \"123456\",\n  \"fan_or_fin\": \"0123456789\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/kyc/fayda/verify-otp",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "kyc",
+                                "fayda",
+                                "verify-otp"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get KYC Photo URL",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/kyc/me/photo-url",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "kyc",
+                                "me",
+                                "photo-url"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Fee Service",
+            "description": "Fee calculation endpoints",
+            "item": [
+                {
+                    "name": "Calculate Fee",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"amount\": 100000,\n  \"who_pays\": \"buyer\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/fee/calculate",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "fee",
+                                "calculate"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Payment Provider Service",
+            "description": "Payment provider integration endpoints",
+            "item": [
+                {
+                    "name": "Verify Payment",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/payment/verify/reference-code-here?provider=chapa",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "payment",
+                                "verify",
+                                "reference-code-here"
+                            ],
+                            "query": [
+                                {
+                                    "key": "provider",
+                                    "value": "chapa"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "List Banks",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/payment/banks?currency=ETB&provider=chapa",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "payment",
+                                "banks"
+                            ],
+                            "query": [
+                                {
+                                    "key": "currency",
+                                    "value": "ETB"
+                                },
+                                {
+                                    "key": "provider",
+                                    "value": "chapa"
+                                }
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Notification Service",
+            "description": "Notification management endpoints",
+            "item": [
+                {
+                    "name": "List Notifications",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/notifications?page=1&limit=20",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "notifications"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "20"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Mark Notification as Read",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/notifications/{{notif_id}}/read",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "notifications",
+                                "{{notif_id}}",
+                                "read"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Mark All Notifications as Read",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/notifications/read-all",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "notifications",
+                                "read-all"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Webhook Service",
+            "description": "Webhook management and event handling",
+            "item": [
+                {
+                    "name": "Receive Chapa Webhook",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "x-chapa-signature",
+                                "value": "signature-here"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"reference\": \"payment-reference\",\n  \"status\": \"success\",\n  \"amount\": 100000\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/webhooks/chapa",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "webhooks",
+                                "chapa"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Dispatch Outgoing Event",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"event_type\": \"escrow.completed\",\n  \"org_id\": \"{{org_id}}\",\n  \"data\": {}\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/webhooks/dispatch",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "webhooks",
+                                "dispatch"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Webhook Logs",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/webhooks/logs?offset=0&limit=50",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "webhooks",
+                                "logs"
+                            ],
+                            "query": [
+                                {
+                                    "key": "offset",
+                                    "value": "0"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "50"
+                                }
+                            ]
+                        }
+                    }
+                }
+            ]
+        }
+    ],
+    "auth": {
+        "type": "bearer",
+        "bearer": [
+            {
+                "key": "token",
+                "value": "{{auth_token}}",
+                "type": "string"
+            }
+        ]
+    }
+}

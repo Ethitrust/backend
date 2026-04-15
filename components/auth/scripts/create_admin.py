@@ -114,11 +114,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Create or promote an admin user in the Auth service",
     )
-    parser.add_argument("--email", required=True, help="Admin email")
-    parser.add_argument("--password", required=True, help="Admin password")
-    parser.add_argument("--first-name", required=True, help="First name")
-    parser.add_argument("--last-name", required=True, help="Last name")
+    parser.add_argument("-e", "--email", required=True, help="Admin email")
+    parser.add_argument("-p", "--password", required=True, help="Admin password")
+    parser.add_argument("-f", "--first-name", required=True, help="First name")
+    parser.add_argument("-l", "--last-name", required=True, help="Last name")
     parser.add_argument(
+        "-d",
         "--dry-run",
         action="store_true",
         help="Preview operation without committing changes",
