@@ -130,6 +130,10 @@ def mock_grpc(monkeypatch):
         AsyncMock(return_value=True),
     )
     monkeypatch.setattr(
+        "app.grpc_clients.calculate_fee",
+        AsyncMock(return_value={"fee_amount": 1500, "buyer_fee": 1500, "seller_fee": 0}),
+    )
+    monkeypatch.setattr(
         "app.grpc_clients.create_checkout",
         AsyncMock(
             return_value={
