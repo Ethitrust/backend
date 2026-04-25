@@ -55,6 +55,8 @@ class EvidenceResponse(BaseModel):
     file_url: str
     file_type: Optional[str]
     description: Optional[str]
+    is_tampered: bool = False
+    tamper_metadata: Optional[dict] = None
     created_at: datetime
     model_config = {"from_attributes": True}
 

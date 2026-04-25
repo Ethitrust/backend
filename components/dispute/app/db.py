@@ -77,6 +77,8 @@ class DisputeEvidence(Base):
     file_url: Mapped[str] = mapped_column(String(512), nullable=False)
     file_type: Mapped[Optional[str]] = mapped_column(String(50))
     description: Mapped[Optional[str]] = mapped_column(Text)
+    is_tampered: Mapped[bool] = mapped_column(default=False)
+    tamper_metadata: Mapped[Optional[dict]] = mapped_column(pg.JSONB)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
