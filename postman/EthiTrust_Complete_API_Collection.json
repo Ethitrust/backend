@@ -12,6 +12,11 @@
             "type": "string"
         },
         {
+            "key": "ws_base_url",
+            "value": "ws://localhost:8000",
+            "type": "string"
+        },
+        {
             "key": "auth_token",
             "value": "",
             "type": "string"
@@ -1869,6 +1874,29 @@
                     }
                 },
                 {
+                    "name": "Check Dispute Access",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{auth_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/dispute/{{dispute_id}}/access",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "dispute",
+                                "{{dispute_id}}",
+                                "access"
+                            ]
+                        }
+                    }
+                },
+                {
                     "name": "Add Evidence",
                     "request": {
                         "method": "POST",
@@ -2055,6 +2083,37 @@
                                 "dispute",
                                 "{{dispute_id}}",
                                 "cancel"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Gateway Realtime",
+            "description": "Gateway websocket endpoints for realtime event fanout",
+            "item": [
+                {
+                    "name": "Dispute Realtime WebSocket",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "description": "Open as a WebSocket request in Postman. You can use either Authorization header or token query param.",
+                        "url": {
+                            "raw": "{{ws_base_url}}/ws/disputes/{{dispute_id}}?token={{auth_token}}",
+                            "host": [
+                                "{{ws_base_url}}"
+                            ],
+                            "path": [
+                                "ws",
+                                "disputes",
+                                "{{dispute_id}}"
+                            ],
+                            "query": [
+                                {
+                                    "key": "token",
+                                    "value": "{{auth_token}}"
+                                }
                             ]
                         }
                     }
