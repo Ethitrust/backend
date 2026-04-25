@@ -83,6 +83,8 @@ PROTO_TARGETS: dict[str, list[str]] = {
     "storage.proto": [
         "components/storage/proto",
         "components/kyc/proto",
+        "components/admin/proto",
+        "components/dispute/proto",
     ],
     # Server: payout | Clients: admin
     "payout.proto": [

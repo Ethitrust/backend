@@ -108,7 +108,7 @@ class Escrow(Base):
             "counter_pending_counterparty",
             "rejected",
             "expired",
-            "pending",  # TODO: investigate when to use 'pending' vs 'active'
+            "pending",
             "active",
             "completed",
             "disputed",

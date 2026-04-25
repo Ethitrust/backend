@@ -1935,37 +1935,6 @@
                     }
                 },
                 {
-                    "name": "Execute Resolution",
-                    "request": {
-                        "method": "POST",
-                        "header": [
-                            {
-                                "key": "X-Internal-Token",
-                                "value": "internal-token-here"
-                            },
-                            {
-                                "key": "Content-Type",
-                                "value": "application/json"
-                            }
-                        ],
-                        "body": {
-                            "mode": "raw",
-                            "raw": "{\n  \"resolution\": \"buyer_wins\",\n  \"admin_id\": \"admin-user-id\"\n}"
-                        },
-                        "url": {
-                            "raw": "{{base_url}}/dispute/{{dispute_id}}/execute-resolution",
-                            "host": [
-                                "{{base_url}}"
-                            ],
-                            "path": [
-                                "dispute",
-                                "{{dispute_id}}",
-                                "execute-resolution"
-                            ]
-                        }
-                    }
-                },
-                {
                     "name": "List Disputes",
                     "request": {
                         "method": "GET",
