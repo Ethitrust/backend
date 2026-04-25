@@ -2,13 +2,15 @@
 Business logic for the Escrow service.
 
 Implements the dispatcher pattern:
-  initialize() → create_onetime / create_milestone_escrow / create_recurring
+    initialize() → create_onetime / create_milestone_escrow / create_recurring
 
 State machine:
-  pending  → active | cancelled
-    active   → completed | disputed
-    disputed → completed | refunded
-  completed, cancelled, refunded → (terminal)
+    pending  → active | cancelled
+        active   → submitted | disputed
+        submitted → in_review | disputed
+        in_review → completed | disputed
+        disputed → completed | refunded
+    completed, cancelled, refunded → (terminal)
 """
 
 from __future__ import annotations
@@ -86,6 +88,16 @@ VALID_TRANSITIONS_V3: dict[str, dict[str, list[str]]] = {
         "system": ["active"],
     },
     "active": {
+        "initiator": ["disputed", "submitted"],
+        "counterparty": ["disputed", "submitted"],
+        "system": ["completed"],
+    },
+    "submitted": {
+        "initiator": ["disputed", "in_review"],
+        "counterparty": ["disputed", "in_review"],
+        "system": ["completed"],
+    },
+    "in_review": {
         "initiator": ["disputed"],
         "counterparty": ["disputed"],
         "system": ["completed"],
@@ -217,6 +229,16 @@ class EscrowService:
         ):
             return "counterparty"
         return None
+
+    def _is_buyer(self, escrow: Escrow, user_id: uuid.UUID) -> bool:
+        return (escrow.initiator_role == "buyer" and escrow.initiator_id == user_id) or (
+            escrow.initiator_role == "seller" and escrow.receiver_id == user_id
+        )
+
+    def _is_seller(self, escrow: Escrow, user_id: uuid.UUID) -> bool:
+        return (escrow.initiator_role == "buyer" and escrow.receiver_id == user_id) or (
+            escrow.initiator_role == "seller" and escrow.initiator_id == user_id
+        )
 
     def get_status_message(self, escrow: Escrow) -> str | None:
         """Return a user-facing explanation for escrow status."""
@@ -363,6 +385,22 @@ class EscrowService:
             return
 
         if data.receiver_id is not None:
+            try:
+                is_org_receiver = await grpc_clients.check_organization_exists(
+                    str(data.receiver_id)
+                )
+            except RuntimeError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Unable to validate receiver type",
+                ) from exc
+
+            if is_org_receiver:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="receiver_id must belong to an individual user, not an organization",
+                )
+
             try:
                 receiver_profile = await grpc_clients.get_user_by_id(str(data.receiver_id))
             except RuntimeError as exc:
@@ -726,15 +764,13 @@ class EscrowService:
 
     async def mark_complete(self, escrow_id: uuid.UUID, user_id: uuid.UUID) -> Escrow:
         escrow = await self.get_escrow(escrow_id, user_id)
-        if escrow.status != "active":
+        if escrow.status not in {"submitted", "in_review"}:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Cannot complete escrow in status '{escrow.status}'",
             )
 
-        is_buyer = (escrow.initiator_role == "buyer" and escrow.initiator_id == user_id) or (
-            escrow.initiator_role == "seller" and escrow.receiver_id == user_id
-        )
+        is_buyer = self._is_buyer(escrow, user_id)
 
         if not is_buyer:
             raise HTTPException(
@@ -814,6 +850,80 @@ class EscrowService:
                 "initiator_id": str(escrow.initiator_id) if escrow.initiator_id else None,
                 "receiver_id": str(escrow.receiver_id) if escrow.receiver_id else None,
                 "receiver_email": escrow.receiver_email,
+            },
+        )
+        return escrow
+
+    async def mark_submitted(self, escrow_id: uuid.UUID, user_id: uuid.UUID) -> Escrow:
+        escrow = await self.get_escrow(escrow_id, user_id)
+        if escrow.status != "active":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot submit escrow in status '{escrow.status}'",
+            )
+
+        if not self._is_seller(escrow, user_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the seller can mark an escrow as submitted",
+            )
+
+        actor = self._resolve_actor_for_user(escrow, user_id)
+        if actor is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only escrow participants can submit delivery",
+            )
+
+        escrow = await self.transition_status(escrow, "submitted", actor)
+        await self.repo.save(escrow)
+
+        await publish(
+            "escrow.submitted",
+            {
+                "escrow_id": str(escrow.id),
+                "transaction_ref": escrow.transaction_ref,
+                "initiator_id": str(escrow.initiator_id) if escrow.initiator_id else None,
+                "receiver_id": str(escrow.receiver_id) if escrow.receiver_id else None,
+                "receiver_email": escrow.receiver_email,
+                "actor_user_id": str(user_id),
+            },
+        )
+        return escrow
+
+    async def mark_in_review(self, escrow_id: uuid.UUID, user_id: uuid.UUID) -> Escrow:
+        escrow = await self.get_escrow(escrow_id, user_id)
+        if escrow.status != "submitted":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot review escrow in status '{escrow.status}'",
+            )
+
+        if not self._is_buyer(escrow, user_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the buyer can mark an escrow as in review",
+            )
+
+        actor = self._resolve_actor_for_user(escrow, user_id)
+        if actor is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only escrow participants can start review",
+            )
+
+        escrow = await self.transition_status(escrow, "in_review", actor)
+        await self.repo.save(escrow)
+
+        await publish(
+            "escrow.in_review",
+            {
+                "escrow_id": str(escrow.id),
+                "transaction_ref": escrow.transaction_ref,
+                "initiator_id": str(escrow.initiator_id) if escrow.initiator_id else None,
+                "receiver_id": str(escrow.receiver_id) if escrow.receiver_id else None,
+                "receiver_email": escrow.receiver_email,
+                "actor_user_id": str(user_id),
             },
         )
         return escrow

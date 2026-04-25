@@ -772,9 +772,13 @@ async def test_get_escrow_forbidden(svc, repo):
 
 @pytest.mark.asyncio
 async def test_mark_complete(svc, repo):
-    """Buyer (initiator with role=buyer) can complete an active escrow."""
-    escrow = make_escrow(status="active", initiator_id=TEST_USER_ID, initiator_role="buyer")
-    completed = make_escrow(status="completed", initiator_id=TEST_USER_ID, initiator_role="buyer")
+    """Buyer (initiator with role=buyer) can complete a submitted escrow."""
+    escrow = make_escrow(status="submitted", initiator_id=TEST_USER_ID, initiator_role="buyer")
+    completed = make_escrow(
+        status="completed",
+        initiator_id=TEST_USER_ID,
+        initiator_role="buyer",
+    )
     repo.get_by_id = AsyncMock(return_value=escrow)
     repo.update_status = AsyncMock(return_value=completed)
     repo.save = AsyncMock(return_value=completed)
@@ -791,9 +795,27 @@ async def test_mark_complete(svc, repo):
 
 
 @pytest.mark.asyncio
+async def test_mark_complete_from_in_review(svc, repo):
+    escrow = make_escrow(status="in_review", initiator_id=TEST_USER_ID, initiator_role="buyer")
+    completed = make_escrow(status="completed", initiator_id=TEST_USER_ID, initiator_role="buyer")
+    repo.get_by_id = AsyncMock(return_value=escrow)
+    repo.update_status = AsyncMock(return_value=completed)
+    repo.save = AsyncMock(return_value=completed)
+
+    with (
+        patch("app.grpc_clients.release_funds", AsyncMock(return_value=True)),
+        patch("app.grpc_clients.get_user_wallet", AsyncMock(return_value="wallet-uuid")),
+        patch("app.service.publish", AsyncMock()),
+    ):
+        result = await svc.mark_complete(escrow.id, TEST_USER_ID)
+
+    assert result.status == "completed"
+
+
+@pytest.mark.asyncio
 async def test_mark_complete_fails_when_wallet_missing(svc, repo):
     """Completion should fail and avoid status transition if either wallet is missing."""
-    escrow = make_escrow(status="active", initiator_id=TEST_USER_ID, initiator_role="buyer")
+    escrow = make_escrow(status="submitted", initiator_id=TEST_USER_ID, initiator_role="buyer")
     repo.get_by_id = AsyncMock(return_value=escrow)
     repo.update_status = AsyncMock()
     repo.save = AsyncMock()
@@ -815,7 +837,7 @@ async def test_mark_complete_fails_when_wallet_missing(svc, repo):
 @pytest.mark.asyncio
 async def test_mark_complete_release_failure_does_not_persist_completed(svc, repo):
     """Completion should not be persisted when wallet release errors."""
-    escrow = make_escrow(status="active", initiator_id=TEST_USER_ID, initiator_role="buyer")
+    escrow = make_escrow(status="submitted", initiator_id=TEST_USER_ID, initiator_role="buyer")
     repo.get_by_id = AsyncMock(return_value=escrow)
     repo.update_status = AsyncMock()
     repo.save = AsyncMock()
@@ -840,7 +862,7 @@ async def test_mark_complete_release_failure_does_not_persist_completed(svc, rep
 async def test_mark_complete_forbidden_for_non_buyer(svc, repo):
     """Non-buyer should receive HTTP 403 when trying to complete."""
     escrow = make_escrow(
-        status="active",
+        status="submitted",
         initiator_id=TEST_USER_ID,
         initiator_role="seller",
         receiver_id=TEST_RECEIVER_ID,
@@ -855,9 +877,9 @@ async def test_mark_complete_forbidden_for_non_buyer(svc, repo):
 
 @pytest.mark.asyncio
 async def test_mark_complete_allows_receiver_when_initiator_role_is_seller(svc, repo):
-    """For seller-initiated escrows, receiver is buyer and can complete when active."""
+    """For seller-initiated escrows, receiver is buyer and can complete when submitted."""
     escrow = make_escrow(
-        status="active",
+        status="submitted",
         initiator_id=TEST_STRANGER_ID,
         initiator_role="seller",
         receiver_id=TEST_USER_ID,
@@ -887,7 +909,7 @@ async def test_mark_complete_allows_receiver_when_initiator_role_is_seller(svc, 
 async def test_mark_complete_organization_initiator_uses_org_wallet_owner(svc, repo):
     """Organization-created seller escrow should release funds to org wallet on completion."""
     escrow = make_escrow(
-        status="active",
+        status="submitted",
         initiator_actor_type="organization",
         initiator_id=None,
         initiator_org_id=TEST_ORG_ID,
@@ -924,7 +946,7 @@ async def test_mark_complete_organization_initiator_uses_org_wallet_owner(svc, r
 
 @pytest.mark.asyncio
 async def test_mark_complete_rejects_non_active_escrow(svc, repo):
-    escrow = make_escrow(status="invited", initiator_id=TEST_USER_ID, initiator_role="buyer")
+    escrow = make_escrow(status="active", initiator_id=TEST_USER_ID, initiator_role="buyer")
     repo.get_by_id = AsyncMock(return_value=escrow)
     repo.update_status = AsyncMock()
     repo.save = AsyncMock()
@@ -941,6 +963,105 @@ async def test_mark_complete_rejects_non_active_escrow(svc, repo):
     repo.update_status.assert_not_awaited()
     repo.save.assert_not_awaited()
     mock_release.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_mark_submitted(svc, repo):
+    escrow = make_escrow(
+        status="active",
+        initiator_id=TEST_USER_ID,
+        initiator_role="buyer",
+        receiver_id=TEST_RECEIVER_ID,
+    )
+    submitted = make_escrow(
+        status="submitted",
+        initiator_id=TEST_USER_ID,
+        initiator_role="buyer",
+        receiver_id=TEST_RECEIVER_ID,
+    )
+    repo.get_by_id = AsyncMock(return_value=escrow)
+    repo.update_status = AsyncMock(return_value=submitted)
+    repo.save = AsyncMock(return_value=submitted)
+
+    with patch("app.service.publish", AsyncMock()) as mock_publish:
+        result = await svc.mark_submitted(escrow.id, TEST_RECEIVER_ID)
+
+    assert result.status == "submitted"
+    mock_publish.assert_awaited_once()
+    event_name, payload = mock_publish.await_args.args
+    assert event_name == "escrow.submitted"
+    assert payload["actor_user_id"] == str(TEST_RECEIVER_ID)
+    assert payload["escrow_id"] == str(result.id)
+
+
+@pytest.mark.asyncio
+async def test_mark_submitted_forbidden_for_non_seller(svc, repo):
+    escrow = make_escrow(
+        status="active",
+        initiator_id=TEST_USER_ID,
+        initiator_role="buyer",
+        receiver_id=TEST_RECEIVER_ID,
+    )
+    repo.get_by_id = AsyncMock(return_value=escrow)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await svc.mark_submitted(escrow.id, TEST_USER_ID)
+
+    assert exc_info.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_mark_submitted_rejects_non_active_escrow(svc, repo):
+    escrow = make_escrow(status="pending", initiator_id=TEST_USER_ID, initiator_role="buyer")
+    repo.get_by_id = AsyncMock(return_value=escrow)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await svc.mark_submitted(escrow.id, TEST_RECEIVER_ID)
+
+    assert exc_info.value.status_code == 400
+    assert "Cannot submit escrow" in str(exc_info.value.detail)
+
+
+@pytest.mark.asyncio
+async def test_mark_in_review(svc, repo):
+    escrow = make_escrow(status="submitted", initiator_id=TEST_USER_ID, initiator_role="buyer")
+    in_review = make_escrow(status="in_review", initiator_id=TEST_USER_ID, initiator_role="buyer")
+    repo.get_by_id = AsyncMock(return_value=escrow)
+    repo.update_status = AsyncMock(return_value=in_review)
+    repo.save = AsyncMock(return_value=in_review)
+
+    with patch("app.service.publish", AsyncMock()) as mock_publish:
+        result = await svc.mark_in_review(escrow.id, TEST_USER_ID)
+
+    assert result.status == "in_review"
+    mock_publish.assert_awaited_once()
+    event_name, payload = mock_publish.await_args.args
+    assert event_name == "escrow.in_review"
+    assert payload["actor_user_id"] == str(TEST_USER_ID)
+    assert payload["escrow_id"] == str(result.id)
+
+
+@pytest.mark.asyncio
+async def test_mark_in_review_forbidden_for_non_buyer(svc, repo):
+    escrow = make_escrow(status="submitted", initiator_id=TEST_USER_ID, initiator_role="buyer")
+    repo.get_by_id = AsyncMock(return_value=escrow)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await svc.mark_in_review(escrow.id, TEST_RECEIVER_ID)
+
+    assert exc_info.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_mark_in_review_rejects_non_submitted_escrow(svc, repo):
+    escrow = make_escrow(status="active", initiator_id=TEST_USER_ID, initiator_role="buyer")
+    repo.get_by_id = AsyncMock(return_value=escrow)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await svc.mark_in_review(escrow.id, TEST_USER_ID)
+
+    assert exc_info.value.status_code == 400
+    assert "Cannot review escrow" in str(exc_info.value.detail)
 
 
 @pytest.mark.asyncio

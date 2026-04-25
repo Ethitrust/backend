@@ -67,7 +67,7 @@ class Escrow(Base):
             name="ck_escrows_type",
         ),
         CheckConstraint(
-            "status IN ('invited', 'counter_pending_initiator', 'counter_pending_counterparty', 'rejected', 'expired', 'pending', 'active', 'completed', 'disputed', 'cancelled', 'refunded')",
+            "status IN ('invited', 'counter_pending_initiator', 'counter_pending_counterparty', 'rejected', 'expired', 'pending', 'active', 'submitted', 'in_review', 'completed', 'disputed', 'cancelled', 'refunded')",
             name="ck_escrows_status",
         ),
         CheckConstraint(
@@ -108,8 +108,10 @@ class Escrow(Base):
             "counter_pending_counterparty",
             "rejected",
             "expired",
-            "pending",  # TODO: investigate when to use 'pending' vs 'active'
+            "pending",
             "active",
+            "submitted",
+            "in_review",
             "completed",
             "disputed",
             "cancelled",

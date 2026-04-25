@@ -795,6 +795,120 @@ async def test_cancel_already_cancelled(client):
     assert second.status_code == 400
 
 
+@pytest.mark.asyncio
+async def test_submit_escrow_seller_marks_delivered(client):
+    payload = {
+        "escrow_type": "onetime",
+        "title": "Submit delivered work",
+        "currency": "ETB",
+        "amount": 20_000,
+        "initiator_role": "buyer",
+        "receiver_id": "22222222-2222-4222-8222-22222222222b",
+    }
+    create_resp = await client.post("/escrow", json=payload, headers=AUTH_HEADER)
+    assert create_resp.status_code == 201, create_resp.text
+    escrow_id = create_resp.json()["escrow"]["id"]
+
+    accept_resp = await client.post(f"/escrow/{escrow_id}/accept", json={}, headers=RECEIVER_HEADER)
+    assert accept_resp.status_code == 200, accept_resp.text
+    assert accept_resp.json()["escrow"]["status"] == "active"
+
+    submit_resp = await client.post(f"/escrow/{escrow_id}/submit", headers=RECEIVER_HEADER)
+    assert submit_resp.status_code == 200, submit_resp.text
+    assert submit_resp.json()["status"] == "submitted"
+
+
+@pytest.mark.asyncio
+async def test_submit_escrow_forbidden_for_buyer(client):
+    payload = {
+        "escrow_type": "onetime",
+        "title": "Submit forbidden for buyer",
+        "currency": "ETB",
+        "amount": 20_000,
+        "initiator_role": "buyer",
+        "receiver_id": "22222222-2222-4222-8222-22222222222b",
+    }
+    create_resp = await client.post("/escrow", json=payload, headers=AUTH_HEADER)
+    assert create_resp.status_code == 201, create_resp.text
+    escrow_id = create_resp.json()["escrow"]["id"]
+
+    accept_resp = await client.post(f"/escrow/{escrow_id}/accept", json={}, headers=RECEIVER_HEADER)
+    assert accept_resp.status_code == 200, accept_resp.text
+
+    submit_resp = await client.post(f"/escrow/{escrow_id}/submit", headers=AUTH_HEADER)
+    assert submit_resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_review_escrow_buyer_marks_in_review(client):
+    payload = {
+        "escrow_type": "onetime",
+        "title": "Review submitted work",
+        "currency": "ETB",
+        "amount": 20_000,
+        "initiator_role": "buyer",
+        "receiver_id": "22222222-2222-4222-8222-22222222222b",
+    }
+    create_resp = await client.post("/escrow", json=payload, headers=AUTH_HEADER)
+    assert create_resp.status_code == 201, create_resp.text
+    escrow_id = create_resp.json()["escrow"]["id"]
+
+    accept_resp = await client.post(f"/escrow/{escrow_id}/accept", json={}, headers=RECEIVER_HEADER)
+    assert accept_resp.status_code == 200, accept_resp.text
+
+    submit_resp = await client.post(f"/escrow/{escrow_id}/submit", headers=RECEIVER_HEADER)
+    assert submit_resp.status_code == 200, submit_resp.text
+
+    review_resp = await client.post(f"/escrow/{escrow_id}/review", headers=AUTH_HEADER)
+    assert review_resp.status_code == 200, review_resp.text
+    assert review_resp.json()["status"] == "in_review"
+
+
+@pytest.mark.asyncio
+async def test_complete_from_submitted_and_in_review(client):
+    payload = {
+        "escrow_type": "onetime",
+        "title": "Complete after submit/review",
+        "currency": "ETB",
+        "amount": 20_000,
+        "initiator_role": "buyer",
+        "receiver_id": "22222222-2222-4222-8222-22222222222b",
+    }
+
+    # path 1: submitted -> complete
+    create_one = await client.post("/escrow", json=payload, headers=AUTH_HEADER)
+    assert create_one.status_code == 201, create_one.text
+    escrow_one = create_one.json()["escrow"]["id"]
+    assert (
+        await client.post(f"/escrow/{escrow_one}/accept", json={}, headers=RECEIVER_HEADER)
+    ).status_code == 200
+    assert (
+        await client.post(f"/escrow/{escrow_one}/submit", headers=RECEIVER_HEADER)
+    ).status_code == 200
+    complete_from_submitted = await client.post(
+        f"/escrow/{escrow_one}/complete", headers=AUTH_HEADER
+    )
+    assert complete_from_submitted.status_code == 200, complete_from_submitted.text
+    assert complete_from_submitted.json()["status"] == "completed"
+
+    # path 2: submitted -> in_review -> complete
+    create_two = await client.post("/escrow", json=payload, headers=AUTH_HEADER)
+    assert create_two.status_code == 201, create_two.text
+    escrow_two = create_two.json()["escrow"]["id"]
+    assert (
+        await client.post(f"/escrow/{escrow_two}/accept", json={}, headers=RECEIVER_HEADER)
+    ).status_code == 200
+    assert (
+        await client.post(f"/escrow/{escrow_two}/submit", headers=RECEIVER_HEADER)
+    ).status_code == 200
+    assert (
+        await client.post(f"/escrow/{escrow_two}/review", headers=AUTH_HEADER)
+    ).status_code == 200
+    complete_from_review = await client.post(f"/escrow/{escrow_two}/complete", headers=AUTH_HEADER)
+    assert complete_from_review.status_code == 200, complete_from_review.text
+    assert complete_from_review.json()["status"] == "completed"
+
+
 # ─── GET /escrow/{id}/milestones ─────────────────────────────────────────────
 
 
