@@ -81,7 +81,7 @@ async def test_raise_dispute_publishes_targeted_notifications(service, repo, mon
     publish_mock = AsyncMock()
     monkeypatch.setattr("app.service.publish", publish_mock)
 
-    dispute = SimpleNamespace(id=uuid.uuid4(), escrow_id=escrow_id, status="open")
+    dispute = SimpleNamespace(id=uuid.uuid4(), escrow_id=escrow_id, status="open_negotiation")
     repo.get_by_escrow.return_value = None
     repo.create.return_value = dispute
 
@@ -127,7 +127,7 @@ async def test_raise_dispute_uses_disputing_user_as_transition_actor(
     monkeypatch.setattr("app.service.publish", AsyncMock())
 
     repo.get_by_escrow.return_value = None
-    repo.create.return_value = SimpleNamespace(id=uuid.uuid4(), escrow_id=escrow_id, status="open")
+    repo.create.return_value = SimpleNamespace(id=uuid.uuid4(), escrow_id=escrow_id, status="open_negotiation")
 
     await service.raise_dispute(
         escrow_id,
@@ -161,7 +161,7 @@ async def test_cancel_dispute_allows_only_raiser(service, repo):
         id=uuid.uuid4(),
         escrow_id=uuid.uuid4(),
         raised_by=uuid.uuid4(),
-        status="open",
+        status="open_negotiation",
     )
     repo.get_by_id.return_value = dispute
 
@@ -182,13 +182,13 @@ async def test_resolve_buyer_marks_dispute_as_pending(service, repo, monkeypatch
         id=dispute_id,
         escrow_id=escrow_id,
         raised_by=initiator_id,
-        status="open",
+        status="escalated_mediation",
     )
     repo.update_status.return_value = SimpleNamespace(
         id=dispute_id,
         escrow_id=escrow_id,
         raised_by=initiator_id,
-        status="resolution_pending_buyer",
+        status="resolved_buyer",
     )
 
     release_mock = AsyncMock(return_value={"success": True})
@@ -221,9 +221,9 @@ async def test_resolve_buyer_marks_dispute_as_pending(service, repo, monkeypatch
         ),
     )
 
-    assert dispute.status == "resolution_pending_buyer"
-    release_mock.assert_not_awaited()
-    transition_mock.assert_not_awaited()
+    assert dispute.status == "resolved_buyer"
+    release_mock.assert_awaited_once_with(escrow_id, "buyer")
+    transition_mock.assert_awaited_once_with(escrow_id, "refunded")
 
 
 @pytest.mark.asyncio
@@ -242,7 +242,7 @@ async def test_execute_resolution_transitions_escrow_and_marks_resolved(
         id=dispute_id,
         escrow_id=escrow_id,
         raised_by=initiator_id,
-        status="resolution_pending_buyer",
+        status="escalated_mediation",
     )
     repo.update_status.return_value = SimpleNamespace(
         id=dispute_id,
@@ -290,7 +290,7 @@ async def test_add_evidence_publishes_targeted_notifications(service, repo, monk
         id=dispute_id,
         escrow_id=escrow_id,
         raised_by=initiator_id,
-        status="open",
+        status="open_negotiation",
     )
     repo.get_by_id.return_value = dispute
 
@@ -370,7 +370,7 @@ async def test_list_disputes_returns_pagination_payload(service, repo):
         escrow_id=uuid.uuid4(),
         raised_by=uuid.uuid4(),
         reason="fraud",
-        status="open",
+        status="open_negotiation",
         resolution_note=None,
         resolved_by=None,
         resolved_at=None,
@@ -378,7 +378,7 @@ async def test_list_disputes_returns_pagination_payload(service, repo):
     )
     repo.list_disputes.return_value = ([dispute], 1)
 
-    result = await service.list_disputes("admin", "open", 1, 20)
+    result = await service.list_disputes("admin", "open_negotiation", 1, 20)
 
     assert result["total"] == 1
     assert result["pages"] == 1
@@ -393,7 +393,7 @@ async def test_list_my_disputes_returns_pagination_payload(service, repo):
         escrow_id=uuid.uuid4(),
         raised_by=actor_id,
         reason="fraud",
-        status="open",
+        status="open_negotiation",
         resolution_note=None,
         resolved_by=None,
         resolved_at=None,
@@ -401,11 +401,11 @@ async def test_list_my_disputes_returns_pagination_payload(service, repo):
     )
     repo.list_disputes_by_raiser.return_value = ([dispute], 1)
 
-    result = await service.list_my_disputes(actor_id, "open", 1, 20)
+    result = await service.list_my_disputes(actor_id, "open_negotiation", 1, 20)
 
     repo.list_disputes_by_raiser.assert_awaited_once_with(
         raised_by=actor_id,
-        status_filter="open",
+        status_filter="open_negotiation",
         offset=0,
         limit=20,
     )

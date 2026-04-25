@@ -70,6 +70,8 @@ def _to_escrow_response(
         currency=escrow.currency,
         success=success,
         message=message,
+        initiator_role=escrow.initiator_role,
+        transaction_ref=escrow.transaction_ref,
     )
 
 

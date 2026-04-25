@@ -32,4 +32,6 @@ message EscrowResponse {
   string currency     = 7;
   bool   success      = 8;
   string message      = 9;
+  string initiator_role = 10;
+  string transaction_ref = 11;
 }

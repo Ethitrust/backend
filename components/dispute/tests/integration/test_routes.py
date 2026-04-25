@@ -30,7 +30,7 @@ async def test_raise_dispute(client):
     assert r.status_code == 201
     data = r.json()
     assert data["reason"] == "not_delivered"
-    assert data["status"] == "open"
+    assert data["status"] == "open_negotiation"
 
 
 @pytest.mark.asyncio
@@ -46,7 +46,7 @@ async def test_raise_dispute_route_alias(client):
     assert r.status_code == 201
     data = r.json()
     assert data["reason"] == "not_delivered"
-    assert data["status"] == "open"
+    assert data["status"] == "open_negotiation"
 
 
 @pytest.mark.asyncio
@@ -82,6 +82,51 @@ async def test_get_dispute(client):
 
 
 @pytest.mark.asyncio
+async def test_check_dispute_access(client):
+    create_r = await client.post(
+        f"/dispute/{ESCROW_ID}/dispute",
+        json={"reason": "fraud", "description": "Fraudulent transaction detected."},
+        headers=AUTH_HEADER,
+    )
+    dispute_id = create_r.json()["id"]
+
+    r = await client.get(f"/dispute/{dispute_id}/access", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["allowed"] is True
+    assert payload["dispute_id"] == dispute_id
+
+
+@pytest.mark.asyncio
+async def test_request_evidence_upload_url(client):
+    create_r = await client.post(
+        f"/dispute/{ESCROW_ID}/dispute",
+        json={
+            "reason": "fraud",
+            "description": "Need to upload evidence for this dispute.",
+        },
+        headers=AUTH_HEADER,
+    )
+    dispute_id = create_r.json()["id"]
+
+    r = await client.post(
+        f"/dispute/{dispute_id}/evidence/presign-upload",
+        json={
+            "object_key": "dispute/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/evidence.png",
+            "content_type": "image/png",
+            "expires_in_seconds": 600,
+        },
+        headers=AUTH_HEADER,
+    )
+
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["method"] == "PUT"
+    assert payload["object_key"].endswith("evidence.png")
+    assert "url" in payload and payload["url"]
+
+
+@pytest.mark.asyncio
 async def test_resolve_dispute_seller(client):
     create_r = await client.post(
         f"/dispute/{ESCROW_ID}/dispute",
@@ -92,6 +137,9 @@ async def test_resolve_dispute_seller(client):
         headers=AUTH_HEADER,
     )
     dispute_id = create_r.json()["id"]
+    escalated = await client.post(f"/dispute/{dispute_id}/escalate", headers=AUTH_HEADER)
+    assert escalated.status_code == 200
+
     r = await client.post(
         f"/dispute/{ESCROW_ID}/dispute/{dispute_id}/resolve",
         json={
@@ -101,110 +149,7 @@ async def test_resolve_dispute_seller(client):
         headers=AUTH_HEADER,
     )
     assert r.status_code == 202
-    assert r.json()["status"] == "resolution_pending_seller"
-
-
-@pytest.mark.asyncio
-async def test_execute_resolution_after_queueing(client):
-    create_r = await client.post(
-        f"/dispute/{ESCROW_ID}/dispute",
-        json={
-            "reason": "quality_issue",
-            "description": "Quality is clearly below the agreed standard.",
-        },
-        headers=AUTH_HEADER,
-    )
-    dispute_id = create_r.json()["id"]
-
-    queue_r = await client.post(
-        f"/dispute/{ESCROW_ID}/dispute/{dispute_id}/resolve",
-        json={
-            "resolution": "buyer",
-            "resolution_note": "Queueing buyer-friendly resolution for worker execution.",
-        },
-        headers=AUTH_HEADER,
-    )
-    assert queue_r.status_code == 202
-    assert queue_r.json()["status"] == "resolution_pending_buyer"
-
-    execute_r = await client.post(
-        f"/dispute/{dispute_id}/execute-resolution",
-        json={
-            "resolution": "buyer",
-            "admin_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-        },
-    )
-    assert execute_r.status_code == 200
-    assert execute_r.json()["status"] == "resolved_buyer"
-
-
-@pytest.mark.asyncio
-async def test_execute_resolution_is_idempotent(client):
-    create_r = await client.post(
-        f"/dispute/{ESCROW_ID}/dispute",
-        json={
-            "reason": "fraud",
-            "description": "Evidence supports a clear buyer-side fraudulent pattern.",
-        },
-        headers=AUTH_HEADER,
-    )
-    dispute_id = create_r.json()["id"]
-
-    await client.post(
-        f"/dispute/{ESCROW_ID}/dispute/{dispute_id}/resolve",
-        json={
-            "resolution": "seller",
-            "resolution_note": "Queueing seller-favoring decision for execution.",
-        },
-        headers=AUTH_HEADER,
-    )
-
-    first = await client.post(
-        f"/dispute/{dispute_id}/execute-resolution",
-        json={"resolution": "seller"},
-    )
-    second = await client.post(
-        f"/dispute/{dispute_id}/execute-resolution",
-        json={"resolution": "seller"},
-    )
-
-    assert first.status_code == 200
-    assert second.status_code == 200
-    assert first.json()["status"] == "resolved_seller"
-    assert second.json()["status"] == "resolved_seller"
-
-
-@pytest.mark.asyncio
-async def test_execute_resolution_requires_internal_token_when_configured(
-    client,
-    monkeypatch,
-):
-    monkeypatch.setattr("app.api.DISPUTE_INTERNAL_TOKEN", "secret-token")
-
-    create_r = await client.post(
-        f"/dispute/{ESCROW_ID}/dispute",
-        json={
-            "reason": "wrong_item",
-            "description": "Wrong item was delivered and resolution is now queued.",
-        },
-        headers=AUTH_HEADER,
-    )
-    dispute_id = create_r.json()["id"]
-
-    await client.post(
-        f"/dispute/{ESCROW_ID}/dispute/{dispute_id}/resolve",
-        json={
-            "resolution": "buyer",
-            "resolution_note": "Queueing to validate internal token enforcement.",
-        },
-        headers=AUTH_HEADER,
-    )
-
-    execute_r = await client.post(
-        f"/dispute/{dispute_id}/execute-resolution",
-        json={"resolution": "buyer"},
-    )
-    assert execute_r.status_code == 401
+    assert r.json()["status"] == "resolved_seller"
 
 
 @pytest.mark.asyncio
@@ -252,7 +197,7 @@ async def test_mark_dispute_under_review(client):
         headers=AUTH_HEADER,
     )
     assert review_r.status_code == 200
-    assert review_r.json()["status"] == "under_review"
+    assert review_r.json()["status"] == "escalated_mediation"
 
 
 @pytest.mark.asyncio

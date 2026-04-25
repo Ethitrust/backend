@@ -6,21 +6,27 @@ import os
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import grpc_clients
 from app.db import get_db
 from app.models import (
+    ConfirmEvidenceUpload,
+    DisputeAccessCheckResponse,
     DisputeCreate,
-    DisputeExecutionRequest,
+    DisputeMessageCreate,
+    DisputeMessageResponse,
     DisputeResolve,
     DisputeResponse,
     DisputeReviewRequest,
     DisputeSummaryResponse,
     EvidenceResponse,
     PaginatedDisputeResponse,
+    PresignedUploadResponse,
+    RequestEvidenceUpload,
+    SettlementAction,
 )
 from app.repository import DisputeRepository
 from app.service import DisputeService
@@ -28,24 +34,8 @@ from app.service import DisputeService
 dispute_escrow_router = APIRouter(prefix="/dispute", tags=["dispute"])
 
 KYC_MIN_LEVEL = int(os.getenv("KYC_MIN_LEVEL", "1"))
-DISPUTE_INTERNAL_TOKEN = os.getenv("DISPUTE_INTERNAL_TOKEN", "").strip()
 
 security = HTTPBearer()
-
-
-# async def _enforce_kyc_or_raise(user_id: str) -> int:
-#     try:
-#         profile = await grpc_clients.get_user_by_id(user_id)
-#     except RuntimeError as exc:
-#         raise HTTPException(503, "Unable to verify KYC status") from exc
-
-#     kyc_level = int(profile.get("kyc_level", 0))
-#     if kyc_level < KYC_MIN_LEVEL:
-#         raise HTTPException(
-#             403,
-#             "KYC verification is required before accessing this resource. Please complete KYC first.",
-#         )
-#     return kyc_level
 
 
 async def get_current_user(
@@ -64,8 +54,6 @@ async def get_current_user(
     except PermissionError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 
-    # kyc_level = await _enforce_kyc_or_raise(user["user_id"])
-    # user["kyc_level"] = kyc_level
     return user
 
 
@@ -94,6 +82,26 @@ async def raise_dispute(
     return DisputeResponse.model_validate(dispute)
 
 
+@dispute_escrow_router.get("/{dispute_id}/access", response_model=DisputeAccessCheckResponse)
+async def check_dispute_access(
+    dispute_id: uuid.UUID,
+    current_user: dict = Depends(get_current_user),
+    svc: DisputeService = Depends(get_service),
+):
+    user_id = uuid.UUID(current_user["user_id"])
+    result = await svc.get_dispute_for_actor(
+        dispute_id=dispute_id,
+        user_id=user_id,
+        actor_role=current_user.get("role", "user"),
+    )
+    dispute = result["dispute"]
+    return DisputeAccessCheckResponse(
+        allowed=True,
+        dispute_id=dispute.id,
+        escrow_id=dispute.escrow_id,
+    )
+
+
 @dispute_escrow_router.get("/{escrow_id}/dispute", response_model=DisputeResponse)
 async def get_dispute(
     escrow_id: uuid.UUID,
@@ -110,7 +118,96 @@ async def get_dispute(
     return DisputeResponse(
         **{c.key: getattr(d, c.key) for c in d.__table__.columns},
         evidence=[EvidenceResponse.model_validate(e) for e in result["evidence"]],
+        messages=[DisputeMessageResponse.model_validate(m) for m in result["messages"]],
     )
+
+
+@dispute_escrow_router.post(
+    "/{dispute_id}/messages",
+    response_model=DisputeMessageResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_dispute_message(
+    dispute_id: uuid.UUID,
+    body: DisputeMessageCreate,
+    current_user: dict = Depends(get_current_user),
+    svc: DisputeService = Depends(get_service),
+):
+    user_id = uuid.UUID(current_user["user_id"])
+    message = await svc.add_message(
+        dispute_id=dispute_id,
+        user_id=user_id,
+        message_text=body.message,
+        actor_role=current_user.get("role", "user"),
+    )
+    return DisputeMessageResponse.model_validate(message)
+
+
+@dispute_escrow_router.post(
+    "/{dispute_id}/evidence/presign-upload",
+    response_model=PresignedUploadResponse,
+)
+async def request_evidence_upload_url(
+    dispute_id: uuid.UUID,
+    body: RequestEvidenceUpload,
+    current_user: dict = Depends(get_current_user),
+    svc: DisputeService = Depends(get_service),
+):
+    user_id = uuid.UUID(current_user["user_id"])
+    await svc.get_dispute_for_actor(
+        dispute_id,
+        user_id,
+        current_user.get("role", "user"),
+    )
+
+    try:
+        upload = await grpc_clients.generate_storage_upload_url(
+            actor_user_id=current_user["user_id"],
+            role=current_user.get("role", "user"),
+            purpose="dispute",
+            object_key=body.object_key,
+            content_type=body.content_type,
+            expires_in_seconds=body.expires_in_seconds,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to generate storage upload URL",
+        ) from exc
+
+    return PresignedUploadResponse(**upload)
+
+
+@dispute_escrow_router.post(
+    "/{escrow_id}/dispute/{dispute_id}/evidence/confirm",
+    response_model=EvidenceResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def confirm_evidence_upload(
+    escrow_id: uuid.UUID,
+    dispute_id: uuid.UUID,
+    body: ConfirmEvidenceUpload,
+    current_user: dict = Depends(get_current_user),
+    svc: DisputeService = Depends(get_service),
+):
+    _ = escrow_id
+    user_id = uuid.UUID(current_user["user_id"])
+    evidence = await svc.add_evidence(
+        dispute_id=dispute_id,
+        user_id=user_id,
+        file_url=f"s3://{body.object_key}",
+        file_type=body.file_type,
+        description=body.description,
+        object_key=body.object_key,
+        message_id=body.message_id,
+        actor_role=current_user.get("role", "user"),
+    )
+    return EvidenceResponse.model_validate(evidence)
 
 
 @dispute_escrow_router.post(
@@ -127,15 +224,17 @@ async def add_evidence(
     current_user: dict = Depends(get_current_user),
     svc: DisputeService = Depends(get_service),
 ):
+    _ = escrow_id
     user_id = uuid.UUID(current_user["user_id"])
-    # TODO: we should make sure the file is uploaded to out storage
     evidence = await svc.add_evidence(
         dispute_id,
         user_id,
         file_url,
         file_type,
         description,
-        current_user.get("role", "user"),
+        object_key=None,
+        message_id=None,
+        actor_role=current_user.get("role", "user"),
     )
     return EvidenceResponse.model_validate(evidence)
 
@@ -152,6 +251,7 @@ async def resolve_dispute(
     current_user: dict = Depends(get_current_user),
     svc: DisputeService = Depends(get_service),
 ):
+    _ = escrow_id
     admin_id = uuid.UUID(current_user["user_id"])
     dispute = await svc.resolve_dispute(
         dispute_id, admin_id, current_user.get("role", "user"), body
@@ -159,32 +259,63 @@ async def resolve_dispute(
     return DisputeResponse.model_validate(dispute)
 
 
-# should be done from admin side not here sho we should remove it or
-# if the user who initiated the dispute is canceling the dispute
-# we should handle it another way
-
-
-# findout what the goal is here
-@dispute_escrow_router.post("/{dispute_id}/execute-resolution", response_model=DisputeResponse)
-async def execute_resolution(
+@dispute_escrow_router.post("/{dispute_id}/settlement/request", response_model=DisputeResponse)
+async def request_settlement(
     dispute_id: uuid.UUID,
-    body: DisputeExecutionRequest,
+    body: SettlementAction,
+    current_user: dict = Depends(get_current_user),
     svc: DisputeService = Depends(get_service),
-    internal_token: Annotated[
-        str | None,
-        Header(alias="X-Internal-Token"),
-    ] = None,
 ):
-    if DISPUTE_INTERNAL_TOKEN and internal_token != DISPUTE_INTERNAL_TOKEN:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid internal token",
-        )
+    requester_id = uuid.UUID(current_user["user_id"])
+    await svc.add_message(
+        dispute_id=dispute_id,
+        user_id=requester_id,
+        message_text=f"Settlement requested: {body.note}",
+        actor_role=current_user.get("role", "user"),
+        is_system=True,
+    )
+    dispute = await svc.request_settlement(
+        dispute_id=dispute_id,
+        requester_id=requester_id,
+        actor_role=current_user.get("role", "user"),
+    )
+    return DisputeResponse.model_validate(dispute)
 
-    dispute = await svc.execute_resolution(
-        dispute_id,
-        body.resolution,
-        body.admin_id,
+
+@dispute_escrow_router.post("/{dispute_id}/settlement/confirm", response_model=DisputeResponse)
+async def confirm_settlement(
+    dispute_id: uuid.UUID,
+    body: SettlementAction,
+    current_user: dict = Depends(get_current_user),
+    svc: DisputeService = Depends(get_service),
+):
+    confirmer_id = uuid.UUID(current_user["user_id"])
+    dispute = await svc.confirm_settlement(
+        dispute_id=dispute_id,
+        confirmer_id=confirmer_id,
+        actor_role=current_user.get("role", "user"),
+    )
+    await svc.add_message(
+        dispute_id=dispute_id,
+        user_id=confirmer_id,
+        message_text=f"Settlement confirmed: {body.note}",
+        actor_role=current_user.get("role", "user"),
+        is_system=True,
+    )
+    return DisputeResponse.model_validate(dispute)
+
+
+@dispute_escrow_router.post("/{dispute_id}/escalate", response_model=DisputeResponse)
+async def escalate_dispute(
+    dispute_id: uuid.UUID,
+    current_user: dict = Depends(get_current_user),
+    svc: DisputeService = Depends(get_service),
+):
+    actor_id = uuid.UUID(current_user["user_id"])
+    dispute = await svc.escalate_dispute(
+        dispute_id=dispute_id,
+        actor_id=actor_id,
+        actor_role=current_user.get("role", "user"),
     )
     return DisputeResponse.model_validate(dispute)
 

@@ -9,7 +9,7 @@ from typing import Optional
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db import Dispute, DisputeEvidence
+from app.db import Dispute, DisputeEvidence, DisputeMessage
 
 
 class DisputeRepository:
@@ -59,6 +59,81 @@ class DisputeRepository:
     async def list_evidence(self, dispute_id: uuid.UUID) -> list[DisputeEvidence]:
         r = await self.db.execute(
             select(DisputeEvidence).where(DisputeEvidence.dispute_id == dispute_id)
+        )
+        return list(r.scalars().all())
+
+    async def add_message(self, message: DisputeMessage) -> DisputeMessage:
+        self.db.add(message)
+        await self.db.flush()
+        await self.db.refresh(message)
+        return message
+
+    async def list_messages(self, dispute_id: uuid.UUID) -> list[DisputeMessage]:
+        r = await self.db.execute(
+            select(DisputeMessage)
+            .where(DisputeMessage.dispute_id == dispute_id)
+            .order_by(DisputeMessage.created_at.asc())
+        )
+        return list(r.scalars().all())
+
+    async def request_settlement(
+        self,
+        dispute_id: uuid.UUID,
+        requester_id: uuid.UUID,
+    ) -> Optional[Dispute]:
+        dispute = await self.get_by_id(dispute_id)
+        if dispute is None:
+            return None
+        dispute.status = "settlement_pending_confirmation"
+        dispute.settlement_requested_by = requester_id
+        dispute.settlement_confirmed_by = None
+        await self.db.flush()
+        await self.db.refresh(dispute)
+        return dispute
+
+    async def confirm_settlement(
+        self,
+        dispute_id: uuid.UUID,
+        confirmer_id: uuid.UUID,
+    ) -> Optional[Dispute]:
+        dispute = await self.get_by_id(dispute_id)
+        if dispute is None:
+            return None
+        dispute.status = "settled_by_parties"
+        dispute.settlement_confirmed_by = confirmer_id
+        dispute.resolved_by = confirmer_id
+        dispute.resolved_at = datetime.now(timezone.utc)
+        await self.db.flush()
+        await self.db.refresh(dispute)
+        return dispute
+
+    async def escalate_to_mediation(
+        self,
+        dispute_id: uuid.UUID,
+        mediator_id: uuid.UUID | None = None,
+    ) -> Optional[Dispute]:
+        dispute = await self.get_by_id(dispute_id)
+        if dispute is None:
+            return None
+        dispute.status = "escalated_mediation"
+        dispute.escalated_at = datetime.now(timezone.utc)
+        if mediator_id is not None:
+            dispute.assigned_mediator_id = mediator_id
+        await self.db.flush()
+        await self.db.refresh(dispute)
+        return dispute
+
+    async def list_expired_negotiations(
+        self,
+        now: datetime,
+        limit: int = 100,
+    ) -> list[Dispute]:
+        r = await self.db.execute(
+            select(Dispute)
+            .where(Dispute.status.in_(["open_negotiation", "settlement_pending_confirmation"]))
+            .where(Dispute.negotiation_deadline_at < now)
+            .order_by(Dispute.negotiation_deadline_at.asc())
+            .limit(limit)
         )
         return list(r.scalars().all())
 

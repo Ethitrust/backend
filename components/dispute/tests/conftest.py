@@ -41,6 +41,7 @@ async def client(db):
 @pytest.fixture(autouse=True)
 def mock_rabbitmq(monkeypatch):
     monkeypatch.setattr("app.messaging.publish", AsyncMock())
+    monkeypatch.setattr("app.service.publish", AsyncMock())
 
 
 @pytest.fixture(autouse=True)
@@ -86,4 +87,15 @@ def mock_grpc(monkeypatch):
     )
     monkeypatch.setattr(
         "app.grpc_clients.release_funds", AsyncMock(return_value={"success": True})
+    )
+    monkeypatch.setattr(
+        "app.grpc_clients.generate_storage_upload_url",
+        AsyncMock(
+            return_value={
+                "url": "https://storage.example/presigned-upload",
+                "method": "PUT",
+                "object_key": "dispute/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/evidence.png",
+                "expires_in_seconds": 900,
+            }
+        ),
     )
