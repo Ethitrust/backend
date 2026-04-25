@@ -13,10 +13,26 @@ from uuid import uuid4
 
 import httpx
 import redis.asyncio as redis
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    Request,
+    Response,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from starlette.background import BackgroundTask
+
+try:
+    from gateway.app.realtime import RealtimeConnectionManager, start_dispute_event_consumer
+except ModuleNotFoundError:
+    from app.realtime import (  # type: ignore[no-redef]
+        RealtimeConnectionManager,
+        start_dispute_event_consumer,
+    )
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -242,6 +258,48 @@ async def _sanitize_authorization_header(request: Request) -> str | None:
     return f"Bearer {token}"
 
 
+def _extract_websocket_bearer_token(websocket: WebSocket) -> str | None:
+    auth_header = websocket.headers.get("authorization")
+    if auth_header and auth_header.lower().startswith("bearer "):
+        token = auth_header[7:].strip()
+        return token or None
+
+    token = websocket.query_params.get("token", "").strip()
+    return token or None
+
+
+async def _authorize_dispute_subscription(
+    websocket: WebSocket,
+    dispute_id: str,
+) -> bool:
+    token = _extract_websocket_bearer_token(websocket)
+    if token is None:
+        return False
+
+    auth_base = SERVICE_MAP["/auth"].rstrip("/")
+    dispute_base = SERVICE_MAP["/dispute"].rstrip("/")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    client: httpx.AsyncClient = websocket.app.state.http_client
+    try:
+        auth_resp = await client.get(
+            f"{auth_base}/auth/me",
+            headers=headers,
+            timeout=_resolve_timeout_for_path("/auth/me"),
+        )
+        if auth_resp.status_code != status.HTTP_200_OK:
+            return False
+
+        access_resp = await client.get(
+            f"{dispute_base}/dispute/{dispute_id}/access",
+            headers=headers,
+            timeout=_resolve_timeout_for_path("/dispute"),
+        )
+        return access_resp.status_code == status.HTTP_200_OK
+    except (httpx.TimeoutException, httpx.ConnectError):
+        return False
+
+
 def _append_forwarded_for(existing_value: str | None, client_ip: str | None) -> str | None:
     if not client_ip:
         return existing_value
@@ -446,8 +504,17 @@ async def lifespan(application: FastAPI):  # noqa: ANN001
         redis.from_url(REDIS_URL, decode_responses=True) if KYC_CACHE_ENABLED else None
     )
     application.state.circuit_breakers = {}
+    application.state.realtime_manager = RealtimeConnectionManager()
+    application.state.realtime_task = asyncio.create_task(start_dispute_event_consumer(application))
     logger.info("Gateway starting — routing %d services", len(SERVICE_MAP))
     yield
+    realtime_task: asyncio.Task | None = application.state.realtime_task
+    if realtime_task is not None:
+        realtime_task.cancel()
+        try:
+            await realtime_task
+        except asyncio.CancelledError:
+            pass
     redis_client: redis.Redis | None = application.state.redis_client
     if redis_client is not None:
         await redis_client.aclose()
@@ -470,6 +537,25 @@ _HOP_BY_HOP = frozenset(
         "upgrade",
     ]
 )
+
+
+@app.websocket("/ws/disputes/{dispute_id}")
+async def dispute_realtime(websocket: WebSocket, dispute_id: str) -> None:
+    authorized = await _authorize_dispute_subscription(websocket, dispute_id)
+    if not authorized:
+        await websocket.close(code=4403, reason="Unauthorized dispute subscription")
+        return
+
+    manager: RealtimeConnectionManager = websocket.app.state.realtime_manager
+    await manager.connect(websocket, dispute_id)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket, dispute_id)
+    except Exception:
+        manager.disconnect(websocket, dispute_id)
+        await websocket.close(code=1011)
 
 
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])

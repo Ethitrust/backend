@@ -11,6 +11,7 @@ try:
         SERVICE_MAP,
         _append_forwarded_for,
         _extract_bearer_token,
+        _extract_websocket_bearer_token,
         _get_cached_kyc_level,
         _is_kyc_exempt_path,
         _is_org_api_key_escrow_create,
@@ -25,6 +26,7 @@ except ModuleNotFoundError:
         SERVICE_MAP,
         _append_forwarded_for,
         _extract_bearer_token,
+        _extract_websocket_bearer_token,
         _get_cached_kyc_level,
         _is_kyc_exempt_path,
         _is_org_api_key_escrow_create,
@@ -55,6 +57,22 @@ def test_extract_bearer_token() -> None:
     """Handler for HTTPBearer returns None for non-existent auth headers."""
     # This function is now async and works with Request objects, tested via integration tests
     pass
+
+
+def test_extract_websocket_bearer_token_from_header() -> None:
+    websocket = SimpleNamespace(
+        headers={"authorization": "Bearer abc.def"},
+        query_params={},
+    )
+    assert _extract_websocket_bearer_token(websocket) == "abc.def"
+
+
+def test_extract_websocket_bearer_token_from_query_param() -> None:
+    websocket = SimpleNamespace(
+        headers={},
+        query_params={"token": "abc.def"},
+    )
+    assert _extract_websocket_bearer_token(websocket) == "abc.def"
 
 
 def test_org_api_key_heuristic_rejects_jwt_like_tokens() -> None:

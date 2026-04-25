@@ -82,6 +82,22 @@ async def test_get_dispute(client):
 
 
 @pytest.mark.asyncio
+async def test_check_dispute_access(client):
+    create_r = await client.post(
+        f"/dispute/{ESCROW_ID}/dispute",
+        json={"reason": "fraud", "description": "Fraudulent transaction detected."},
+        headers=AUTH_HEADER,
+    )
+    dispute_id = create_r.json()["id"]
+
+    r = await client.get(f"/dispute/{dispute_id}/access", headers=AUTH_HEADER)
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["allowed"] is True
+    assert payload["dispute_id"] == dispute_id
+
+
+@pytest.mark.asyncio
 async def test_request_evidence_upload_url(client):
     create_r = await client.post(
         f"/dispute/{ESCROW_ID}/dispute",

@@ -81,6 +81,12 @@ class SettlementAction(BaseModel):
     note: str = Field(..., min_length=3, max_length=1000)
 
 
+class DisputeAccessCheckResponse(BaseModel):
+    allowed: bool
+    dispute_id: uuid.UUID
+    escrow_id: uuid.UUID
+
+
 class MediatorDecisionRequest(BaseModel):
     resolution: DisputeResolution = Field(..., description="buyer | seller")
     rationale: str = Field(..., min_length=5, max_length=2000)

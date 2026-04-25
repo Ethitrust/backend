@@ -14,6 +14,7 @@ from app import grpc_clients
 from app.db import get_db
 from app.models import (
     ConfirmEvidenceUpload,
+    DisputeAccessCheckResponse,
     DisputeCreate,
     DisputeMessageCreate,
     DisputeMessageResponse,
@@ -79,6 +80,26 @@ async def raise_dispute(
         current_user.get("role", "user"),
     )
     return DisputeResponse.model_validate(dispute)
+
+
+@dispute_escrow_router.get("/{dispute_id}/access", response_model=DisputeAccessCheckResponse)
+async def check_dispute_access(
+    dispute_id: uuid.UUID,
+    current_user: dict = Depends(get_current_user),
+    svc: DisputeService = Depends(get_service),
+):
+    user_id = uuid.UUID(current_user["user_id"])
+    result = await svc.get_dispute_for_actor(
+        dispute_id=dispute_id,
+        user_id=user_id,
+        actor_role=current_user.get("role", "user"),
+    )
+    dispute = result["dispute"]
+    return DisputeAccessCheckResponse(
+        allowed=True,
+        dispute_id=dispute.id,
+        escrow_id=dispute.escrow_id,
+    )
 
 
 @dispute_escrow_router.get("/{escrow_id}/dispute", response_model=DisputeResponse)
