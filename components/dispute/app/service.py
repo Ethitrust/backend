@@ -313,6 +313,9 @@ class DisputeService:
         escrow = await self._get_escrow_or_raise(dispute.escrow_id)
         self._assert_can_view_or_mutate_dispute(escrow, user_id, actor_role)
 
+        from app.image_analysis import analyze_image_for_tampering
+        is_tampered, tamper_metadata = await analyze_image_for_tampering(file_url)
+
         evidence = DisputeEvidence(
             dispute_id=dispute_id,
             uploaded_by=user_id,
@@ -321,6 +324,8 @@ class DisputeService:
             file_type=file_type,
             description=description,
             message_id=message_id,
+            is_tampered=is_tampered,
+            tamper_metadata=tamper_metadata,
         )
         evidence = await self.repo.add_evidence(evidence)
 
@@ -334,6 +339,7 @@ class DisputeService:
                 "file_type": file_type,
                 "description": description,
                 "object_key": object_key,
+                "is_tampered": is_tampered,
             },
             actor_user_id=user_id,
         )

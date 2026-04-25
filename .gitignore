@@ -13,3 +13,5 @@ venv/
 *.lock
 .pytest_cache
 NOTES.md
+# env files (can opt-in for committing if needed)
+.env*

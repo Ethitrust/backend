@@ -96,6 +96,8 @@ class DisputeEvidence(Base):
     message_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         pg.UUID(as_uuid=True), nullable=True, index=True
     )
+    is_tampered: Mapped[bool] = mapped_column(default=False)
+    tamper_metadata: Mapped[Optional[dict]] = mapped_column(pg.JSONB)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

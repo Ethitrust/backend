@@ -205,12 +205,19 @@ async def initialize_escrow(
     svc: EscrowService = Depends(get_service),
 ):
     """Create a new escrow invitation (onetime / milestone / recurring)."""
-    initiator_id = uuid.UUID(current_actor["user_id"])
+    actor_type = current_actor["actor_type"]
+    if actor_type == "organization":
+        initiator_id = None
+        authenticated_org_id = uuid.UUID(current_actor["org_id"])
+    else:
+        initiator_id = uuid.UUID(current_actor["user_id"])
+        authenticated_org_id = None
+
     escrow, payment_url = await svc.initialize(
         data=body,
-        actor_type="user",
+        actor_type=actor_type,
         initiator_id=initiator_id,
-        authenticated_org_id=None,
+        authenticated_org_id=authenticated_org_id,
     )
     return InitializeEscrowResponse(
         escrow=await build_escrow_response(svc, escrow),
@@ -367,6 +374,30 @@ async def complete_escrow(
     """Mark a one-time escrow as complete (buyer only)."""
     user_id = uuid.UUID(current_user["user_id"])
     escrow = await svc.mark_complete(escrow_id, user_id)
+    return await build_escrow_response(svc, escrow)
+
+
+@router.post("/{escrow_id}/submit", response_model=EscrowResponse)
+async def submit_escrow(
+    escrow_id: uuid.UUID,
+    current_user: dict = Depends(get_current_user),
+    svc: EscrowService = Depends(get_service),
+):
+    """Seller marks escrow work as delivered (submitted)."""
+    user_id = uuid.UUID(current_user["user_id"])
+    escrow = await svc.mark_submitted(escrow_id, user_id)
+    return await build_escrow_response(svc, escrow)
+
+
+@router.post("/{escrow_id}/review", response_model=EscrowResponse)
+async def review_escrow(
+    escrow_id: uuid.UUID,
+    current_user: dict = Depends(get_current_user),
+    svc: EscrowService = Depends(get_service),
+):
+    """Buyer marks escrow as in review before completion."""
+    user_id = uuid.UUID(current_user["user_id"])
+    escrow = await svc.mark_in_review(escrow_id, user_id)
     return await build_escrow_response(svc, escrow)
 
 
